@@ -5,35 +5,39 @@ library(dplyr)
 library(foreach)
 library(doParallel)
 library(gdalUtils)
-proj_dir <- "~/WesternNA_SDM/"
+library(doRNG)
+#devtools::install_github("wrathematics/openblasctl")
+library(openblasctl)
+
+proj_dir <- "/home/rstudio/WesternNA_SDM"
 setwd(proj_dir)
 
 ##Downloads test raster data from Amazon S3 if it doesn't already exist.
 if(!file.exists("./data/SDM_tiles_PNW.tar.gz")){
-  aws_dl1 <- "aws s3 cp s3://sdmdata/predictors/SDM_tiles_PNW.tar.gz ./data/SDM_tiles_PNW.tar.gz"
+  aws_dl1 <- "~/.local/bin/aws s3 cp s3://sdmdata/predictors/SDM_tiles_PNW.tar.gz ./data/SDM_tiles_PNW.tar.gz"
   system(paste("cd",proj_dir,"&&",aws_dl1))
-  tar_dl1 <- "tar -xf ./data/SDM_tiles_PNW.tar.gz ./data/"
+  tar_dl1 <- "tar -xf ./data/SDM_tiles_PNW.tar.gz -C ./data/"
   system(paste("cd",proj_dir,"&&",tar_dl1))
 }
 
 ##Downloads full raster data from Amazon S3 if it doesn't already exist.
 # if(!file.exists("./data/SDM_tiles_WNA.tar.gz")){
-#   aws_dl2 <- "aws s3 cp s3://sdmdata/predictors/SDM_tiles_WNA.tar.gz ./data/SDM_tiles_WNA.tar.gz"
+#   aws_dl2 <- "~/.local/bin/aws s3 cp s3://sdmdata/predictors/SDM_tiles_WNA.tar.gz ./data/SDM_tiles_WNA.tar.gz"
 #   system(paste("cd",proj_dir,"&&",aws_dl2),wait=TRUE)
-#   tar_dl2 <- "tar -xf ./data/SDM_tiles_WNA.tar.gz ./data/"
+#   tar_dl2 <- "tar -xf ./data/SDM_tiles_WNA.tar.gz -C ./data/"
 #   system(paste("cd",proj_dir,"&&",tar_dl2),wait=TRUE)
 # }
 
 ##Downloads point data from Amazon S3 if it doesn't already exist.
 if(!file.exists("./data/occurences_final_1_9_2018.tar.gz")){
-  aws_dl3 <- "aws s3 cp s3://sdmdata/occurences/occurences_final_1_9_2018.tar.gz ./data/occurences_final_1_9_2018.tar.gz"
+  aws_dl3 <- "~/.local/bin/aws s3 cp s3://sdmdata/occurences/occurences_final_1_9_2018.tar.gz ./data/occurences_final_1_9_2018.tar.gz"
   system(paste("cd",proj_dir,"&&",aws_dl3),wait=TRUE)
-  tar_dl3 <- "tar -xf ./data/occurences_final_1_9_2018.tar.gz ./data/"
+  tar_dl3 <- "tar -xf ./data/occurences_final_1_9_2018.tar.gz -C ./data/"
   system(paste("cd",proj_dir,"&&",tar_dl3),wait=TRUE)
 }
 
 ##Reads data in
-spd <- read_csv("./data/spocc_occurences_final_1_9_2017.csv")
+spd <- read_csv("./data/occurences_final_1_9_2018.csv")
 
 ## Model fitting for focal species.
 set.seed(38)
@@ -43,16 +47,17 @@ test_spp <- unique(spd$species)
 #               "Balsamorhiza sagittata","Cassiope mertensiana","Erigeron peregrinus",
 #               "Luetkea pectinata","Senecio triangularis")
 
-cl <- makeCluster(12)
+cl <- makeCluster(47)
 registerDoParallel(cl)
 overwrite <- TRUE
 
-all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm"),
-                     .combine="rbind") %dopar% {
+all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl"),
+                     .combine="rbind") %dorng% {
                        
-                       setwd("proj_dir")
+                       setwd(proj_dir)
+                       openblas_set_num_threads(1)
                        
-                       fit_file <- paste("/home/rstudio/Dropbox/AMI_share/WNA_wildflower_SDM/scratch/sdm_fits/sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
+                       fit_file <- paste(proj_dir,"scratch/sdm_fits/sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
                        if(file.exists(fit_file) & overwrite==FALSE){
                          cat(paste("Output file",paste(fit_file),"exists, skipping..."),
                              file="./scratch/sdm_progress.log",append=TRUE)
@@ -68,7 +73,7 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm"),
                          
                          tr_abs <- tr_pres_abs[tr_pres_abs$TR_PRES==0,c(1,2,17:ncol(tr_pres_abs))]
                          tr_abs <- tr_abs[-which(tr_abs$loc %in% unique(tr_pres$loc)),]
-                         tr_abs <- as.data.frame(sample_n(tr_abs,size=max((nrow(tr_pres) * 2),4000)))
+                         tr_abs <- as.data.frame(sample_n(tr_abs,size=max((nrow(tr_pres) * 6),6000)))
                          
                          tr_abs <- tr_abs[,-which(colnames(tr_abs)=="loc")]
                          tr_pres <- tr_pres[,-which(colnames(tr_pres)=="loc")]
@@ -89,11 +94,13 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm"),
                          train_data <- tr_pres_abs2[!(tr_pres_abs2$location %in% valid_blocks),-which(colnames(tr_pres_abs2) == "location")]
                          all_data <- rbind(test_data,train_data)
                          
-                         par(mfrow=c(1,2))
-                         plot(train_data$X,train_data$Y,col=train_data$TR_PRES + 1,
-                              main=paste(test_spp[i],"Training Data"))
-                         plot(test_data$X,test_data$Y,col=test_data$TR_PRES + 1,
-                              main=paste(test_spp[i],"Test Data"))
+                         all_data$train_test <- c(rep("test",nrow(test_data)),rep("train",nrow(train_data)))
+                         
+                         #par(mfrow=c(1,2))
+                         #plot(train_data$X,train_data$Y,col=train_data$TR_PRES + 1,
+                         #     main=paste(test_spp[i],"Training Data"))
+                         #plot(test_data$X,test_data$Y,col=test_data$TR_PRES + 1,
+                         #     main=paste(test_spp[i],"Test Data"))
                          
                          
                          tr_sdmd <- sdmData(TR_PRES ~ . + f(PCT_EFW) + f(PCT_ECO) + f(PSL_TUS) + f(PSL_TWL),
@@ -134,7 +141,7 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm"),
                                         data=tr_sdmd2,methods=c("glm","gbm","svm","maxent"),interaction.depth=2,
                                         var.selection=FALSE)
                          print(sdm_all)
-                         out <- list(list(data=tr_sdmd2,models=sdm_all,stats=tr_sdm_stats))
+                         out <- list(list(data=all_data,final_models=sdm_all,stats=tr_sdm_stats))
                          names(out) <- test_spp[i]
                          saveRDS(out,file=fit_file)
                          cat(paste("Model object written to",fit_file,"on",
@@ -151,11 +158,12 @@ save(all_stats_tbl,file="./output/sdm_results.Rdata")
 
 ####Creates spatial predictions using the weighted average of the models.####
 
-tile_path <- "~/WesternNA_SDM/data/SDM_tiles_PNW/"
-model_path <- "~/WesternNA_SDM/data/scratch/sdm_fits/"
-out_path <- "~/WesternNA_SDM/data/output/PNW_tiles/"
-mosaic_path <- "~/WesternNA_SDM/data/output/PNW_mosaic/"
-log_path <- "~/WesternNA_SDM/data/scratch/sdm_progress.log"
+
+tile_path <- paste(proj_dir,"/data/SDM_tiles_PNW/",sep="")
+model_path <-paste(proj_dir,"/scratch/sdm_fits/",sep="")
+out_path <- paste(proj_dir,"/output/PNW_tiles/",sep="")
+mosaic_path <- paste(proj_dir,"/output/PNW_mosaic/",sep="")
+log_path <- paste(proj_dir,"/scratch/sdm_progress.log",sep="")
 
 pred_tiles <- list.files(tile_path, pattern=".tif$", full.names=TRUE)
 pred_names <- list.files(tile_path,pattern=".tif$", full.names=FALSE)
@@ -164,11 +172,13 @@ model_files <- list.files(model_path,pattern=".Rdata",full.names=TRUE)
 overwrite=TRUE
 
 ##Sets up cluster.
-cl <- makeCluster(38)
+cl <- makeCluster(47)
 registerDoParallel(cl)
 
 ##Raster predictions.
-foreach(i=1:length(model_files),.packages=c("raster","sdm","gdalUtils")) %dopar% {
+foreach(i=1:length(model_files),.packages=c("raster","sdm","gdalUtils","openblasctl")) %dorng% {
+  
+  openblas_set_num_threads(1)
   
   ##Loads fit models.
   out <- readRDS(model_files[i])
@@ -215,7 +225,7 @@ foreach(i=1:length(model_files),.packages=c("raster","sdm","gdalUtils")) %dopar%
                  verbose=TRUE)
   
   ##Copies raster mosaic to S3 bucket.
-  cp_string <- paste("aws s3 cp",paste(mosaic_path,gsub(" ","_",spp),"_mosaic.tif",sep=""),
+  cp_string <- paste("~/.local/bin/aws s3 cp",paste(mosaic_path,gsub(" ","_",spp),"_mosaic.tif",sep=""),
                      paste("s3://sdmdata/PNW_mosaic/", gsub(" ","_",spp), "_mosaic.tif",sep=""))
   system(cp_string,wait=TRUE)
   
