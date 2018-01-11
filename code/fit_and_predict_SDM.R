@@ -182,7 +182,7 @@ foreach(i=1:length(model_files),.packages=c("raster","sdm","gdalUtils","openblas
   
   ##Loads fit models.
   out <- readRDS(model_files[i])
-  models <- out[[1]]$models
+  models <- out[[1]]$final_models
   stats <- out[[1]]$stats
   spp <- names(out)
   remove(out)
@@ -201,7 +201,7 @@ foreach(i=1:length(model_files),.packages=c("raster","sdm","gdalUtils","openblas
     if(file.exists(outfile) & overwrite==FALSE){
       print(paste("File exists, skipping..."))
     }else{
-      pred_tile <- brick(pred_tiles[j])
+      pred_tile <- readAll(brick(pred_tiles[j]))
       names(pred_tile) <- c('PCL_MAN', 'PCL_SE1', 'PCL_SE2', 'PCL_SE3', 'PCM_BFP',
                             'PCM_CMD', 'PCM_DD5', 'PCM_MAP', 'PCM_PAS', 'PCM_TD',
                             'PCT_ECO', 'PCT_EFW', 'PLC_HRB', 'PLC_TRE', 'PLC_URB',
