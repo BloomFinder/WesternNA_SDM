@@ -144,6 +144,11 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                          out <- list(list(data=all_data,final_models=sdm_all,stats=tr_sdm_stats))
                          names(out) <- test_spp[i]
                          saveRDS(out,file=fit_file)
+                         
+                         cp_string <- paste("~/.local/bin/aws s3 cp ",fit_file,
+                                            paste("s3://sdmdata/models/sdm_", gsub(" ","_",test_spp[i]), ".Rdata",sep=""))
+                         system(sp_string,wait=TRUE)
+                         
                          cat(paste("Model object written to",fit_file,"on",
                                    Sys.time(),"\n"),file="./scratch/sdm_progress.log",
                              append=TRUE)
@@ -186,6 +191,8 @@ foreach(i=1:length(model_files),.packages=c("raster","sdm","gdalUtils","openblas
   stats <- out[[1]]$stats
   spp <- names(out)
   remove(out)
+  
+  system(cp_string,wait=TRUE)
   
   cat(paste("Raster predictions for",spp,"(",i,"of",length(model_files),") started on",
             Sys.time(),"\n"),file=log_path,append=TRUE)
