@@ -6,6 +6,7 @@ library(foreach)
 library(doParallel)
 library(gdalUtils)
 library(doRNG)
+library(raster)
 #devtools::install_github("wrathematics/openblasctl")
 library(openblasctl)
 
@@ -57,8 +58,12 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                        setwd(proj_dir)
                        openblas_set_num_threads(1)
                        
+                       ##Downloads model file if it doesn't exist locally.
                        fit_file <- paste(proj_dir,"/scratch/sdm_fits/sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
-                       if(file.exists(fit_file) & overwrite==FALSE){
+                       
+                       file_exists_aws <- system(paste("~/.local/bin/aws s3 ls s3://sdmdata/models/sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep=""))
+                       
+                       if(file_exists_aws == 0 & overwrite==FALSE){
                          cat(paste("Output file",paste(fit_file),"exists, skipping..."),
                              file="./scratch/sdm_progress.log",append=TRUE)
                        }else{
@@ -145,13 +150,23 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                          names(out) <- test_spp[i]
                          saveRDS(out,file=fit_file)
                          
-                         cp_string <- paste("~/.local/bin/aws s3 cp ",fit_file,
-                                            paste("s3://sdmdata/models/sdm_", gsub(" ","_",test_spp[i]), ".Rdata",sep=""))
-                         system(cp_string,wait=TRUE)
                          
                          cat(paste("Model object written to",fit_file,"on",
                                    Sys.time(),"\n"),file="./scratch/sdm_progress.log",
                              append=TRUE)
+                         
+                         
+                         ##Copies model file to S3.
+                         cp_string <- paste("~/.local/bin/aws s3 cp ",fit_file,
+                                            paste("s3://sdmdata/models/sdm_", gsub(" ","_",test_spp[i]), ".Rdata",sep=""))
+                         system(cp_string,wait=TRUE)
+                         
+                         ##Removes file locally if it was successfully uploaded.
+                         file_exists_aws2 <- system(paste("~/.local/bin/aws s3 ls s3://sdmdata/models/sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep=""))
+                         
+                         if(file_exists_aws2==0){
+                           system(paste("rm",fit_file),wait=TRUE)
+                         }
                          (tr_sdm_stats)
                        }
                      }
@@ -181,18 +196,24 @@ cl <- makeCluster(47)
 registerDoParallel(cl)
 
 ##Raster predictions.
-foreach(i=1:length(model_files),.packages=c("raster","sdm","gdalUtils","openblasctl")) %dorng% {
+foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl")) %dorng% {
   
   openblas_set_num_threads(1)
   
+  ##downloads fit model
+  model_dl_cmd <- paste("~/.local/bin/aws s3 cp s3://sdmdata/models/sdm_", gsub(" ","_",test_spp[i]),".Rdata ",
+                        model_path,"sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
+  system(model_dl_cmd)
+  
   ##Loads fit models.
-  out <- readRDS(model_files[i])
+  model_file <- paste(model_path,"sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
+  out <- readRDS(model_file)
   models <- out[[1]]$final_models
   stats <- out[[1]]$stats
   spp <- names(out)
   remove(out)
   
-  cat(paste("Raster predictions for",spp,"(",i,"of",length(model_files),") started on",
+  cat(paste("Raster predictions for",spp,"(",i,"of",length(test_spp),") started on",
             Sys.time(),"\n"),file=log_path,append=TRUE)
   
   ##Creates output directory for each species if it doesn't exist.
@@ -234,7 +255,7 @@ foreach(i=1:length(model_files),.packages=c("raster","sdm","gdalUtils","openblas
                      paste("s3://sdmdata/PNW_mosaic/", gsub(" ","_",spp), "_mosaic.tif",sep=""))
   system(cp_string,wait=TRUE)
   
-  ##Removes tiles and mosaic to save space.
+  ##Removes tiles, mosaic, and model to save disk space.
   all_tile_files <- list.files(".")
   rm_string <- paste("cd",spp_dir,"&&","rm",paste(all_tile_files, collapse=" "))
   system(rm_string)
@@ -242,7 +263,9 @@ foreach(i=1:length(model_files),.packages=c("raster","sdm","gdalUtils","openblas
   rm_string_m <- paste("rm ",mosaic_path,gsub(" ","_",spp),"_mosaic.tif",sep="")
   system(rm_string)
   
-  cat(paste("Raster predictions for",spp,"(",i,"of",length(model_files),") completed on",
+  rm_string_mod <- paste("rm",model_file)
+  
+  cat(paste("Raster predictions for",spp,"(",i,"of",length(test_spp),") completed on",
             Sys.time(),"\n"),file=log_path,append=TRUE)
 }
 stopCluster(cl)
