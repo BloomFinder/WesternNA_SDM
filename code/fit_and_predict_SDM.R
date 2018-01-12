@@ -57,7 +57,7 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                        setwd(proj_dir)
                        openblas_set_num_threads(1)
                        
-                       fit_file <- paste(proj_dir,"scratch/sdm_fits/sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
+                       fit_file <- paste(proj_dir,"/scratch/sdm_fits/sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
                        if(file.exists(fit_file) & overwrite==FALSE){
                          cat(paste("Output file",paste(fit_file),"exists, skipping..."),
                              file="./scratch/sdm_progress.log",append=TRUE)
@@ -92,9 +92,9 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                          
                          test_data <- tr_pres_abs2[tr_pres_abs2$location %in% valid_blocks,-which(colnames(tr_pres_abs2) == "location")]
                          train_data <- tr_pres_abs2[!(tr_pres_abs2$location %in% valid_blocks),-which(colnames(tr_pres_abs2) == "location")]
-                         all_data <- rbind(test_data,train_data)
+                         all_data <- rbind(train_data,test_data)
                          
-                         all_data$train_test <- c(rep("test",nrow(test_data)),rep("train",nrow(train_data)))
+                         all_data$train_test <- c(rep("train",nrow(train_data)),rep("test",nrow(test_data)))
                          
                          #par(mfrow=c(1,2))
                          #plot(train_data$X,train_data$Y,col=train_data$TR_PRES + 1,
@@ -147,7 +147,7 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                          
                          cp_string <- paste("~/.local/bin/aws s3 cp ",fit_file,
                                             paste("s3://sdmdata/models/sdm_", gsub(" ","_",test_spp[i]), ".Rdata",sep=""))
-                         system(sp_string,wait=TRUE)
+                         system(cp_string,wait=TRUE)
                          
                          cat(paste("Model object written to",fit_file,"on",
                                    Sys.time(),"\n"),file="./scratch/sdm_progress.log",
@@ -192,8 +192,6 @@ foreach(i=1:length(model_files),.packages=c("raster","sdm","gdalUtils","openblas
   spp <- names(out)
   remove(out)
   
-  system(cp_string,wait=TRUE)
-  
   cat(paste("Raster predictions for",spp,"(",i,"of",length(model_files),") started on",
             Sys.time(),"\n"),file=log_path,append=TRUE)
   
@@ -236,8 +234,12 @@ foreach(i=1:length(model_files),.packages=c("raster","sdm","gdalUtils","openblas
                      paste("s3://sdmdata/PNW_mosaic/", gsub(" ","_",spp), "_mosaic.tif",sep=""))
   system(cp_string,wait=TRUE)
   
+  ##Removes tiles and mosaic to save space.
   all_tile_files <- list.files(".")
   rm_string <- paste("cd",spp_dir,"&&","rm",paste(all_tile_files, collapse=" "))
+  system(rm_string)
+  
+  rm_string_m <- paste("rm ",mosaic_path,gsub(" ","_",spp),"_mosaic.tif",sep="")
   system(rm_string)
   
   cat(paste("Raster predictions for",spp,"(",i,"of",length(model_files),") completed on",
