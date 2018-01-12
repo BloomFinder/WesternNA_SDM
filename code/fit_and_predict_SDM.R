@@ -58,9 +58,8 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                        setwd(proj_dir)
                        openblas_set_num_threads(1)
                        
-                       ##Downloads model file if it doesn't exist locally.
+                       ##Checks if model file exists on AWS.
                        fit_file <- paste(proj_dir,"/scratch/sdm_fits/sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
-                       
                        file_exists_aws <- system(paste("~/.local/bin/aws s3 ls s3://sdmdata/models/sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep=""))
                        
                        if(file_exists_aws == 0 & overwrite==FALSE){
