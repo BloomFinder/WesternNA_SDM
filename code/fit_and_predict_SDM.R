@@ -50,7 +50,7 @@ test_spp <- unique(spd$species)
 
 cl <- makeCluster(47)
 registerDoParallel(cl)
-overwrite <- TRUE
+overwrite <- FALSE
 
 all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl"),
                      .combine="rbind") %dorng% {
@@ -63,7 +63,7 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                        file_exists_aws <- system(paste("~/.local/bin/aws s3 ls s3://sdmdata/models/sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep=""))
                        
                        if(file_exists_aws == 0 & overwrite==FALSE){
-                         cat(paste("Output file",paste(fit_file),"exists, skipping..."),
+                         cat(paste("Output file",paste(fit_file),"exists, skipping...\n"),
                              file="./scratch/sdm_progress.log",append=TRUE)
                        }else{
                          cat(paste("Fitting model for ",test_spp[i],"(",i,"of",length(test_spp),") on",
@@ -188,7 +188,7 @@ pred_tiles <- list.files(tile_path, pattern=".tif$", full.names=TRUE)
 pred_names <- list.files(tile_path,pattern=".tif$", full.names=FALSE)
 
 model_files <- list.files(model_path,pattern=".Rdata",full.names=TRUE)
-overwrite=TRUE
+overwrite=FALSE
 
 ##Sets up cluster.
 cl <- makeCluster(47)
@@ -215,57 +215,65 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl
   cat(paste("Raster predictions for",spp,"(",i,"of",length(test_spp),") started on",
             Sys.time(),"\n"),file=log_path,append=TRUE)
   
-  ##Creates output directory for each species if it doesn't exist.
-  spp_dir <- paste(out_path,gsub(" ","_",spp),"/",sep="")
-  if(!dir.exists(spp_dir)){dir.create(spp_dir)}
-  
-  preds <- list()
-  for(j in 1:length(pred_tiles)){
-    outfile <- paste(spp_dir,"sdm_tile_",j,
-                     "_",gsub(" ","_",spp),".img",sep="")
-    if(file.exists(outfile) & overwrite==FALSE){
-      print(paste("File exists, skipping..."))
-    }else{
-      pred_tile <- readAll(brick(pred_tiles[j]))
-      names(pred_tile) <- c('PCL_MAN', 'PCL_SE1', 'PCL_SE2', 'PCL_SE3', 'PCM_BFP',
-                            'PCM_CMD', 'PCM_DD5', 'PCM_MAP', 'PCM_PAS', 'PCM_TD',
-                            'PCT_ECO', 'PCT_EFW', 'PLC_HRB', 'PLC_TRE', 'PLC_URB',
-                            'PSL_BDR', 'PSL_CAR','PSL_PHO', 'PSL_SND', 'PSL_TUS',
-                            'PSL_TWL', 'PTP_ELV', 'PTP_RLV', 'PTP_SLP', 'PTP_WET',
-                            'PTP_ASP', 'PTP_SOL', 'PCL_MRA', 'PSW_DIS', 'PSW_OCC',
-                            'PCO_XSC', 'PCO_YSC')
-      pred <- try(ensemble(models,newdata=pred_tile,
-                           setting=list(method='weighted',
-                                        weights=stats$ensemble_weight[models@run.info$success]),
-                           filename=outfile,overwrite=TRUE,progress='text'))
-      preds[[i]] <- pred
+  ##Checks to see if the mosaic exists on Amazon S3.
+  mos_exists_az <- system(paste("~/.local/bin/aws s3 ls s3://sdmdata/PNW_mosaic/",gsub(" ","_",spp),"_mosaic.tif",sep=""),
+                          wait=TRUE)
+  if(mos_exists_az==0 & overwrite==FALSE){
+    cat(paste("Raster predictions for",spp,"(",i,"of",length(test_spp),"already exist in S3, skipping...\n"),
+        file=log_path,append=TRUE)
+  }else{
+    ##Creates output directory for each species if it doesn't exist.
+    spp_dir <- paste(out_path,gsub(" ","_",spp),"/",sep="")
+    if(!dir.exists(spp_dir)){dir.create(spp_dir)}
+    
+    preds <- list()
+    for(j in 1:length(pred_tiles)){
+      outfile <- paste(spp_dir,"sdm_tile_",j,
+                       "_",gsub(" ","_",spp),".img",sep="")
+      if(file.exists(outfile) & overwrite==FALSE){
+        print(paste("File exists, skipping..."))
+      }else{
+        pred_tile <- readAll(brick(pred_tiles[j]))
+        names(pred_tile) <- c('PCL_MAN', 'PCL_SE1', 'PCL_SE2', 'PCL_SE3', 'PCM_BFP',
+                              'PCM_CMD', 'PCM_DD5', 'PCM_MAP', 'PCM_PAS', 'PCM_TD',
+                              'PCT_ECO', 'PCT_EFW', 'PLC_HRB', 'PLC_TRE', 'PLC_URB',
+                              'PSL_BDR', 'PSL_CAR','PSL_PHO', 'PSL_SND', 'PSL_TUS',
+                              'PSL_TWL', 'PTP_ELV', 'PTP_RLV', 'PTP_SLP', 'PTP_WET',
+                              'PTP_ASP', 'PTP_SOL', 'PCL_MRA', 'PSW_DIS', 'PSW_OCC',
+                              'PCO_XSC', 'PCO_YSC')
+        pred <- try(ensemble(models,newdata=pred_tile,
+                             setting=list(method='weighted',
+                                          weights=stats$ensemble_weight[models@run.info$success]),
+                             filename=outfile,overwrite=TRUE,progress='text'))
+        preds[[i]] <- pred
+      }
+      
     }
     
+    ##Merges output tiles to single raster.
+    tiles <- list.files(spp_dir,pattern=".img$")
+    setwd(spp_dir)
+    mosaic_rasters(gdalfile=tiles,dst_dataset=paste(mosaic_path,gsub(" ","_",spp),"_mosaic.tif",sep=""),
+                   verbose=TRUE)
+    
+    ##Copies raster mosaic to S3 bucket.
+    cp_string <- paste("~/.local/bin/aws s3 cp",paste(mosaic_path,gsub(" ","_",spp),"_mosaic.tif",sep=""),
+                       paste("s3://sdmdata/PNW_mosaic/", gsub(" ","_",spp), "_mosaic.tif",sep=""))
+    system(cp_string,wait=TRUE)
+    
+    ##Removes tiles, mosaic, and model to save disk space.
+    all_tile_files <- list.files(spp_dir)
+    rm_string <- paste("cd",spp_dir,"&&","rm",paste(all_tile_files, collapse=" "))
+    system(rm_string)
+    
+    rm_string_m <- paste("rm ",mosaic_path,gsub(" ","_",spp),"_mosaic.tif",sep="")
+    system(rm_string)
+    
+    rm_string_mod <- paste("rm",model_file)
+    
+    cat(paste("Raster predictions for",spp,"(",i,"of",length(test_spp),") completed on",
+              Sys.time(),"\n"),file=log_path,append=TRUE)
   }
-  
-  ##Merges output tiles to single raster.
-  tiles <- list.files(spp_dir,pattern=".img$")
-  setwd(spp_dir)
-  mosaic_rasters(gdalfile=tiles,dst_dataset=paste(mosaic_path,gsub(" ","_",spp),"_mosaic.tif",sep=""),
-                 verbose=TRUE)
-  
-  ##Copies raster mosaic to S3 bucket.
-  cp_string <- paste("~/.local/bin/aws s3 cp",paste(mosaic_path,gsub(" ","_",spp),"_mosaic.tif",sep=""),
-                     paste("s3://sdmdata/PNW_mosaic/", gsub(" ","_",spp), "_mosaic.tif",sep=""))
-  system(cp_string,wait=TRUE)
-  
-  ##Removes tiles, mosaic, and model to save disk space.
-  all_tile_files <- list.files(".")
-  rm_string <- paste("cd",spp_dir,"&&","rm",paste(all_tile_files, collapse=" "))
-  system(rm_string)
-  
-  rm_string_m <- paste("rm ",mosaic_path,gsub(" ","_",spp),"_mosaic.tif",sep="")
-  system(rm_string)
-  
-  rm_string_mod <- paste("rm",model_file)
-  
-  cat(paste("Raster predictions for",spp,"(",i,"of",length(test_spp),") completed on",
-            Sys.time(),"\n"),file=log_path,append=TRUE)
 }
 stopCluster(cl)
 
