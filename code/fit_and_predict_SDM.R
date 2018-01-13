@@ -48,19 +48,21 @@ if(!file.exists("./data/Randolph_glacier_random_points_attrib.tar.gz")){
 ##Reads data in
 spd <- read_csv("./data/occurences_final_1_9_2018.csv")
 glac <- read_csv("./data/Randolph_glacier_random_points_attrib.csv")
-glac <- complete.cases(glac)
+glac <- glac[complete.cases(glac),]
 
-## Model fitting for focal species.
-set.seed(38)
+##Species list for analysis
 test_spp <- unique(spd$species)
 #test_spp <- sample(unique(spd$species),size=50,replace=FALSE)
 # test_spp <- c("Aconitum columbianum","Anaphalis margaritacea","Anemone occidentalis",
 #               "Balsamorhiza sagittata","Cassiope mertensiana","Erigeron peregrinus",
 #               "Luetkea pectinata","Senecio triangularis")
 
+## Model fitting for focal species.
+set.seed(38)
+
 cl <- makeCluster(47)
 registerDoParallel(cl)
-overwrite <- FALSE
+overwrite <- TRUE
 
 all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl"),
                      .combine="rbind") %dorng% {
@@ -94,8 +96,11 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                          ##Adds a fixed proportion of random absences on glaciers.
                          n_abs <- nrow(tr_abs)
                          gl_abs <- sample_n(glac,size=n_abs*0.1,weight=glac$PT_DENS)
+                         gl_abs <- gl_abs[,-c(3,36)]
+                         gl_abs$location <- NA
                          gl_abs$loc <- NA
-                         rbind(tr_abs,gl_abs)
+                         gl_abs$TR_PRES <- 0
+                         tr_abs <- rbind(tr_abs,gl_abs)
                          
                          tr_abs <- tr_abs[,-which(colnames(tr_abs)=="loc")]
                          tr_pres <- tr_pres[,-which(colnames(tr_pres)=="loc")]
@@ -195,7 +200,6 @@ save(all_stats_tbl,file="./output/sdm_results.Rdata")
 
 ####Creates spatial predictions using the weighted average of the models.####
 
-
 tile_path <- paste(proj_dir,"/data/SDM_tiles_PNW/",sep="")
 model_path <-paste(proj_dir,"/scratch/sdm_fits/",sep="")
 out_path <- paste(proj_dir,"/output/PNW_tiles/",sep="")
@@ -217,29 +221,30 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl
   
   openblas_set_num_threads(1)
   
-  ##downloads fit model
-  model_dl_cmd <- paste("~/.local/bin/aws s3 cp s3://sdmdata/models/sdm_", gsub(" ","_",test_spp[i]),".Rdata ",
-                        model_path,"sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
-  system(model_dl_cmd)
-  
-  ##Loads fit models.
-  model_file <- paste(model_path,"sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
-  out <- readRDS(model_file)
-  models <- out[[1]]$final_models
-  stats <- out[[1]]$stats
-  spp <- names(out)
-  remove(out)
-  
-  cat(paste("Raster predictions for",spp,"(",i,"of",length(test_spp),") started on",
-            Sys.time(),"\n"),file=log_path,append=TRUE)
-  
   ##Checks to see if the mosaic exists on Amazon S3.
-  mos_exists_az <- system(paste("~/.local/bin/aws s3 ls s3://sdmdata/PNW_mosaic/",gsub(" ","_",spp),"_mosaic.tif",sep=""),
+  mos_exists_az <- system(paste("~/.local/bin/aws s3 ls s3://sdmdata/PNW_mosaic/",gsub(" ","_",test_spp[i]),"_mosaic.tif",sep=""),
                           wait=TRUE)
   if(mos_exists_az==0 & overwrite==FALSE){
     cat(paste("Raster predictions for",spp,"(",i,"of",length(test_spp),"already exist in S3, skipping...\n"),
         file=log_path,append=TRUE)
   }else{
+    
+    ##downloads fit model
+    model_dl_cmd <- paste("~/.local/bin/aws s3 cp s3://sdmdata/models/sdm_", gsub(" ","_",test_spp[i]),".Rdata ",
+                          model_path,"sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
+    system(model_dl_cmd)
+    
+    ##Loads fit models.
+    model_file <- paste(model_path,"sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
+    out <- readRDS(model_file)
+    models <- out[[1]]$final_models
+    stats <- out[[1]]$stats
+    spp <- names(out)
+    remove(out)
+    
+    cat(paste("Raster predictions for",spp,"(",i,"of",length(test_spp),") started on",
+              Sys.time(),"\n"),file=log_path,append=TRUE)
+    
     ##Creates output directory for each species if it doesn't exist.
     spp_dir <- paste(out_path,gsub(" ","_",spp),"/",sep="")
     if(!dir.exists(spp_dir)){dir.create(spp_dir)}
@@ -271,20 +276,20 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl
     ##Merges output tiles to single raster.
     tiles <- list.files(spp_dir,pattern=".img$")
     setwd(spp_dir)
-    mosaic_rasters(gdalfile=tiles,dst_dataset=paste(mosaic_path,gsub(" ","_",spp),"_mosaic.tif",sep=""),
+    mosaic_rasters(gdalfile=tiles,dst_dataset=paste(mosaic_path,gsub(" ","_",test_spp[i]),"_mosaic.tif",sep=""),
                    verbose=TRUE)
     
     ##Copies raster mosaic to S3 bucket.
-    cp_string <- paste("~/.local/bin/aws s3 cp",paste(mosaic_path,gsub(" ","_",spp),"_mosaic.tif",sep=""),
-                       paste("s3://sdmdata/PNW_mosaic/", gsub(" ","_",spp), "_mosaic.tif",sep=""))
+    cp_string <- paste("~/.local/bin/aws s3 cp",paste(mosaic_path,gsub(" ","_",test_spp[i]),"_mosaic.tif",sep=""),
+                       paste("s3://sdmdata/PNW_mosaic/", gsub(" ","_",test_spp[i]), "_mosaic.tif",sep=""))
     system(cp_string,wait=TRUE)
     
     ##Removes tiles, mosaic, and model to save disk space.
-    all_tile_files <- list.files(spp_dir,full.names=TRUE)
-    rm_string <- paste("rm",paste(all_tile_files, collapse=" "))
+    all_tile_files <- list.files(spp_dir)
+    rm_string <- paste("rm",paste(paste(spp_dir,all_tile_files,sep=""),collapse=" "))
     system(rm_string)
     
-    rm_string_m <- paste("rm ",mosaic_path,gsub(" ","_",spp),"_mosaic.tif",sep="")
+    rm_string_m <- paste("rm ",mosaic_path,gsub(" ","_",test_spp[i]),"_mosaic.tif",sep="")
     system(rm_string)
     
     rm_string_mod <- paste("rm",model_file)
