@@ -37,8 +37,18 @@ if(!file.exists("./data/occurences_final_1_9_2018.tar.gz")){
   system(paste("cd",proj_dir,"&&",tar_dl3),wait=TRUE)
 }
 
+##Downloads glacier random point data from Amazon S3 if it doesn't already exist.
+if(!file.exists("./data/Randolph_glacier_random_points_attrib.tar.gz")){
+  aws_dl4 <- "~/.local/bin/aws s3 cp s3://sdmdata/occurences/Randolph_glacier_random_points_attrib.tar.gz ./data/Randolph_glacier_random_points_attrib.tar.gz"
+  system(paste("cd",proj_dir,"&&",aws_dl4),wait=TRUE)
+  tar_dl4 <- "tar -xf ./data/Randolph_glacier_random_points_attrib.tar.gz -C ./data/"
+  system(paste("cd",proj_dir,"&&",tar_dl4),wait=TRUE)
+}
+
 ##Reads data in
 spd <- read_csv("./data/occurences_final_1_9_2018.csv")
+glac <- read_csv("./data/Randolph_glacier_random_points_attrib.csv")
+glac <- complete.cases(glac)
 
 ## Model fitting for focal species.
 set.seed(38)
@@ -56,9 +66,11 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                      .combine="rbind") %dorng% {
                        
                        setwd(proj_dir)
+                       
+                       ##Prevents multithreaded linear algebra library from parallelizing.
                        openblas_set_num_threads(1)
                        
-                       ##Checks if model file exists on AWS.
+                       ##Checks if model file already exists on AWS.
                        fit_file <- paste(proj_dir,"/scratch/sdm_fits/sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
                        file_exists_aws <- system(paste("~/.local/bin/aws s3 ls s3://sdmdata/models/sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep=""))
                        
@@ -77,7 +89,13 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                          
                          tr_abs <- tr_pres_abs[tr_pres_abs$TR_PRES==0,c(1,2,17:ncol(tr_pres_abs))]
                          tr_abs <- tr_abs[-which(tr_abs$loc %in% unique(tr_pres$loc)),]
-                         tr_abs <- as.data.frame(sample_n(tr_abs,size=max((nrow(tr_pres) * 6),6000)))
+                         tr_abs <- as.data.frame(sample_n(tr_abs,size=max((nrow(tr_pres) * 4),5000)))
+                         
+                         ##Adds a fixed proportion of random absences on glaciers.
+                         n_abs <- nrow(tr_abs)
+                         gl_abs <- sample_n(glac,size=n_abs*0.1,weight=glac$PT_DENS)
+                         gl_abs$loc <- NA
+                         rbind(tr_abs,gl_abs)
                          
                          tr_abs <- tr_abs[,-which(colnames(tr_abs)=="loc")]
                          tr_pres <- tr_pres[,-which(colnames(tr_pres)=="loc")]
@@ -262,14 +280,15 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl
     system(cp_string,wait=TRUE)
     
     ##Removes tiles, mosaic, and model to save disk space.
-    all_tile_files <- list.files(spp_dir)
-    rm_string <- paste("cd",spp_dir,"&&","rm",paste(all_tile_files, collapse=" "))
+    all_tile_files <- list.files(spp_dir,full.names=TRUE)
+    rm_string <- paste("rm",paste(all_tile_files, collapse=" "))
     system(rm_string)
     
     rm_string_m <- paste("rm ",mosaic_path,gsub(" ","_",spp),"_mosaic.tif",sep="")
     system(rm_string)
     
     rm_string_mod <- paste("rm",model_file)
+    system(rm_string_mod)
     
     cat(paste("Raster predictions for",spp,"(",i,"of",length(test_spp),") completed on",
               Sys.time(),"\n"),file=log_path,append=TRUE)
