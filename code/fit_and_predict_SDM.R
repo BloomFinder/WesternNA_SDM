@@ -91,7 +91,7 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                          
                          tr_abs <- tr_pres_abs[tr_pres_abs$TR_PRES==0,c(1,2,17:ncol(tr_pres_abs))]
                          tr_abs <- tr_abs[-which(tr_abs$loc %in% unique(tr_pres$loc)),]
-                         tr_abs <- as.data.frame(sample_n(tr_abs,size=max((nrow(tr_pres) * 4),5000)))
+                         tr_abs <- as.data.frame(sample_n(tr_abs,size=max((nrow(tr_pres) * 5),6000)))
                          
                          ##Adds a fixed proportion of random absences on glaciers.
                          n_abs <- nrow(tr_abs)
