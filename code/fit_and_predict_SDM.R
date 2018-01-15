@@ -225,7 +225,7 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl
   mos_exists_az <- system(paste("~/.local/bin/aws s3 ls s3://sdmdata/PNW_mosaic/",gsub(" ","_",test_spp[i]),"_mosaic.tif",sep=""),
                           wait=TRUE)
   if(mos_exists_az==0 & overwrite==FALSE){
-    cat(paste("Raster predictions for",test_spp[i],"(",i,"of",length(test_spp),"already exist in S3, skipping...\n"),
+    cat(paste("Raster predictions for",spp,"(",i,"of",length(test_spp),"already exist in S3, skipping...\n"),
         file=log_path,append=TRUE)
   }else{
     
@@ -246,7 +246,7 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl
               Sys.time(),"\n"),file=log_path,append=TRUE)
     
     ##Creates output directory for each species if it doesn't exist.
-    spp_dir <- paste(out_path,gsub(" ","_",test_spp[i]),"/",sep="")
+    spp_dir <- paste(out_path,gsub(" ","_",spp),"/",sep="")
     if(!dir.exists(spp_dir)){dir.create(spp_dir)}
     
     preds <- list()
@@ -285,7 +285,8 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl
     system(cp_string,wait=TRUE)
     
     ##Removes tiles, mosaic, and model to save disk space.
-    rm_string <- paste("rm -r",spp_dir)
+    all_tile_files <- list.files(spp_dir)
+    rm_string <- paste("rm",paste(paste(spp_dir,all_tile_files,sep=""),collapse=" "))
     system(rm_string)
     
     rm_string_m <- paste("rm ",mosaic_path,gsub(" ","_",test_spp[i]),"_mosaic.tif",sep="")
@@ -299,4 +300,3 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl
   }
 }
 stopCluster(cl)
-
