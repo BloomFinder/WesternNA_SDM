@@ -7,31 +7,36 @@ library(foreach)
 library(doParallel)
 library(doRNG)
 library(raster)
+##library(openblasctl)
+
+proj_dir <- "~/code/WesternNA_SDM/"
+model_dir <- "./scratch/models/"
+out_dir <- "./scratch/models_calib/"
+setwd(proj_dir)
 
 ##Downloads presence point data from Amazon S3 if it doesn't already exist.
-if(!file.exists("./data/occurences_final_1_9_2018.tar.gz")){
-  aws_dl3 <- "~/.local/bin/aws s3 cp s3://sdmdata/occurences/occurences_final_1_9_2018.tar.gz ./data/occurences_final_1_9_2018.tar.gz"
-  system(paste("cd",proj_dir,"&&",aws_dl3),wait=TRUE)
-  tar_dl3 <- "tar -xf ./data/occurences_final_1_9_2018.tar.gz -C ./data/"
-  system(paste("cd",proj_dir,"&&",tar_dl3),wait=TRUE)
+if(!file.exists("./data/occurences_final_1_9_2018.csv")){
+  aws_dl <- "~/.local/bin/aws s3 cp s3://sdmdata/occurences/occurences_final_1_9_2018.tar.gz ./data/occurences_final_1_9_2018.tar.gz"
+  system(paste("cd",proj_dir,"&&",aws_dl),wait=TRUE)
+  tar_dl <- "tar -xf ./data/occurences_final_1_9_2018.tar.gz -C ./data/"
+  system(paste("cd",proj_dir,"&&",tar_dl),wait=TRUE)
 }
 
 ##Downloads presence-absence point data from Amazon S3 if it doesn't already exist.
-if(!file.exists("./data/calibration_plotdata_1_26_2018.tar.gz")){
-  aws_dl3 <- "~/.local/bin/aws s3 cp s3://sdmdata/occurences/calibration_plotdata_1_26_2018.tar.gz ./data/calibration_plotdata_1_26_2018.tar.gz"
-  system(paste("cd",proj_dir,"&&",aws_dl3),wait=TRUE)
-  tar_dl3 <- "tar -xf ./data/calibration_plotdata_1_26_2018.tar.gz -C ./data/"
-  system(paste("cd",proj_dir,"&&",tar_dl3),wait=TRUE)
+if(!file.exists("./data/calibration_plotdata_1_26_2018.csv")){
+  aws_dl2 <- "~/.local/bin/aws s3 cp s3://sdmdata/occurences/calibration_plotdata_1_26_2018.tar.gz ./data/calibration_plotdata_1_26_2018.tar.gz"
+  system(paste("cd",proj_dir,"&&",aws_dl2),wait=TRUE)
+  tar_dl2 <- "tar -xf ./data/calibration_plotdata_1_26_2018.tar.gz -C ./data/"
+  system(paste("cd",proj_dir,"&&",tar_dl2),wait=TRUE)
 }
 
 ##Reads in presence data for species list.
-pres <- read_csv("/home/rstudio/Dropbox/AMI_share/WNA_wildflower_SDM/data/spocc_all_final_1_9_2018.csv")
+pres <- read_csv(paste(proj_dir,"data/occurences_final_1_9_2018.csv",sep=""))
 spp <- unique(pres$species)
 gen <- unique(pres$genus)
-rm(pres)
 
 ##Reads in presence-absence data.
-pres_abs <- read_csv("~/Dropbox/Research/crowd_pheno/data/NPSVeg_CoreData_BIEN_combined_focalgen_attrib.csv")
+pres_abs <- read_csv(paste(proj_dir,"data/calibration_plotdata_1_26_2018.csv",sep=""))
 pres_abs <- filter(pres_abs,AcceptedGe %in% gen)
 
 pres_abs$PlotAreaHa[is.na(pres_abs$PlotAreaHa)] <- 0.04
@@ -56,8 +61,9 @@ foreach(i=1:length(spp),.packages=c()) %dorng% {
   openblas_set_num_threads(1)
   
   ##Checks to see if file already exists on S3
-  file_exists_aws <- system(paste("~/.local/bin/aws s3 ls s3://sdmdata/models_calibrated/sdm_",
-                                  gsub(" ","_",test_spp[i]),"_calib.Rdata",sep=""))
+  fit_file <- paste("sdm_",gsub(" ","_",spp[i]),"_calib.Rdata",sep="")
+  file_exists_aws <- system(paste("~/.local/bin/aws s3 ls s3://sdmdata/models_calibrated/",
+                                  fit_file))
   
   if(file_exists_aws == 0 & overwrite==FALSE){
     
@@ -66,21 +72,21 @@ foreach(i=1:length(spp),.packages=c()) %dorng% {
     
   }else{
     
-    cat(paste("Calibrating model for ",test_spp[i],"(",i,"of",length(test_spp),") on",
+    cat(paste("Calibrating model for ",spp[i],"(",i,"of",length(spp),") on",
               Sys.time(),"\n"),file="./scratch/sdm_progress.log",append=TRUE)
     
     ##Downloads model from S3
     model_file <- paste("sdm_",gsub(" ","_",spp[i]),".Rdata", sep="")
     s3_path <- paste("s3://sdmdata/models/",model_file, sep="")
     local_path <- paste(model_dir,model_file,sep="")
-    s3_dl_string <- paste("aws s3 cp",s3_path,local_path)
+    s3_dl_string <- paste("~/miniconda2/bin/aws s3 cp",s3_path,local_path)
     system(s3_dl_string)
     
     ##Loads fit model.
     model <- readRDS(local_path)
     spp_stats <- model[[1]]$stats
     spp_sdm <- model[[1]]$final_models
-    spp_weights <- model$ensemble_weight
+    spp_weights <- spp_stats$ensemble_weight
     spp_obs <- model[[1]]$final_models@models$TR_PRES$glm$'1'@object$data
     spp_pred1 <- model[[1]]$final_models@models$TR_PRES$glm$'1'@evaluation$training@predicted
     spp_pred2 <- model[[1]]$final_models@models$TR_PRES$brt$'2'@evaluation$training@predicted
@@ -100,7 +106,7 @@ foreach(i=1:length(spp),.packages=c()) %dorng% {
                           !(Loc %in% pres_locs) &
                           !(Loc %in% gen_locs))
     abs_focal$PRES <- 0
-    pres_abs_focal <- as.data.frame(rbind(pres_focal,abs_focal))
+    pres_abs_focal <- rbind(pres_focal,abs_focal)
     
     ##Holds out 20% of calibration data for testing.
     pres_abs_test <- sample_frac(pres_abs_focal,size=0.2)
@@ -124,23 +130,25 @@ foreach(i=1:length(spp),.packages=c()) %dorng% {
     }
     
     ##Predicts presence-only value for all pres-abs points.
-    ens_pred <- predict(test_sdm,newdata=pres_abs_focal3,type="response")
+    pres_abs_focal3 <- as.data.frame(pres_abs_focal3)
+    pres_abs_test <- as.data.frame(pres_abs_test)
+    ens_pred <- predict(spp_sdm,newdata=pres_abs_focal3,type="response")
     pres_abs_focal3$Ens_pred <- apply(ens_pred,FUN=wfun,MARGIN = 1)
     pres_abs_focal3$Ens_pred[pres_abs_focal3$Ens_pred <= 0.00001] <- 1e-5
     pres_abs_focal3$pred_logit <- logit(pres_abs_focal3$Ens_pred)
     
-    ens_pred_test <- predict(test_sdm,newdata=pres_abs_test,type="response")
+    ens_pred_test <- predict(spp_sdm,newdata=pres_abs_test,type="response")
     pres_abs_test$Ens_pred <- apply(ens_pred_test,FUN=wfun,MARGIN = 1)
     pres_abs_test$Ens_pred[pres_abs_test$Ens_pred <= 0.00001] <- 1e-5
     pres_abs_test$pred_logit <- logit(pres_abs_test$Ens_pred)
     
     ##Preps presence-only points for geographic correction
-    pred_all <- cbind(test_pred1,test_pred2,test_pred3,test_pred4)
+    pred_all <- cbind(spp_pred1,spp_pred2,spp_pred3,spp_pred4)
     pred_weighted <- apply(pred_all,FUN=wfun,MARGIN = 1)
     pred_weighted[pred_weighted <= 0.00001] <- 1e-5
     
     pred_logit <- logit(pred_weighted)
-    corr_data <- test_mod[[1]]$final_models@models$TR_PRES$glm$'1'@object$data
+    corr_data <- model[[1]]$final_models@models$TR_PRES$glm$'1'@object$data
     corr_data$pred_logit <- pred_logit
     
     ##Fits the kriging model for geographic correction.
@@ -153,7 +161,7 @@ foreach(i=1:length(spp),.packages=c()) %dorng% {
     pres_abs_focal3$Corr_pred_prob <- inv_logit(pres_abs_focal3$Corr_pred)
     
     ##Predicts for heldout data.
-    pres_abs_test$Corr_pred <- predict(corr_gam,newdata=pres_abs_focal3)
+    pres_abs_test$Corr_pred <- predict(corr_gam,newdata=pres_abs_test)
     pres_abs_test$Corr_pred[pres_abs_test$Corr_pred < -10] <- -10
     pres_abs_test$Corr_pred_prob <- inv_logit(pres_abs_test$Corr_pred)
     
@@ -162,11 +170,11 @@ foreach(i=1:length(spp),.packages=c()) %dorng% {
                      family=binomial(link = "logit"))
     
     ##Predicts calibrated values at pres-abs points
-    pres_abs_focal3$Calib_pred <- predict(calib_gam,data=pres_abs_focal3,
+    pres_abs_focal3$Calib_pred <- predict(calib_gam,newdata=pres_abs_focal3,
                                           type="response")
     
     ##Predicts calibrated values at heldout points.
-    pres_abs_test$Calib_pred <- predict(calib_gam,data=pres_abs_test,
+    pres_abs_test$Calib_pred <- predict(calib_gam,newdata=pres_abs_test,
                                         type="response")
     
     ##Packages data and models.
@@ -182,11 +190,19 @@ foreach(i=1:length(spp),.packages=c()) %dorng% {
     saveRDS(out_list,file=out_path)
     
     ##Uploads to S3
-    upl_string <- paste("aws s3 cp",out_path,paste("s3://sdmdata/models_calibrated/",out_name,sep=""))
+    upl_string <- paste("~/miniconda2/bin/aws s3 cp",out_path,paste("s3://sdmdata/models_calibrated/",out_name,sep=""))
     system(upl_string,wait=TRUE)
     
-    (out_list)
+    ##Removes local files.
+    rm_string1 <- paste("rm",model_file)
+    rm_string2 <- paste("rm",out_path)
+    system(rm_string1,wait=TRUE)
+    system(rm_string2,wait=TRUE)
     
+    ##Logs completion
+    cat(paste("Calibration complete for ",spp[i],"(",i,"of",length(spp),") on",
+              Sys.time(),"\n"),file="./scratch/sdm_progress.log",append=TRUE)
+
     # ##Brings in the original raster prediction.
     # rast_path <- paste(raw_pred_path,gsub(" ","_",spp[i]),"_mosaic.tif",sep="")
     # rast_pred <- raster(rast_path)
