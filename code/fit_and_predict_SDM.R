@@ -21,19 +21,19 @@ if(!file.exists("./data/SDM_tiles_PNW.tar.gz")){
   system(paste("cd",proj_dir,"&&",tar_dl1))
 }
 
-##Downloads full raster data from Amazon S3 if it doesn't already exist.
-# if(!file.exists("./data/SDM_tiles_WNA.tar.gz")){
-#   aws_dl2 <- "~/.local/bin/aws s3 cp s3://sdmdata/predictors/SDM_tiles_WNA.tar.gz ./data/SDM_tiles_WNA.tar.gz"
-#   system(paste("cd",proj_dir,"&&",aws_dl2),wait=TRUE)
-#   tar_dl2 <- "tar -xf ./data/SDM_tiles_WNA.tar.gz -C ./data/"
-#   system(paste("cd",proj_dir,"&&",tar_dl2),wait=TRUE)
-# }
+#Downloads full raster data from Amazon S3 if it doesn't already exist.
+if(!file.exists("./data/SDM_tiles_WNA.tar.gz")){
+  aws_dl2 <- "~/.local/bin/aws s3 cp s3://sdmdata/predictors/SDM_tiles_WNA.tar.gz ./data/SDM_tiles_WNA.tar.gz"
+  system(paste("cd",proj_dir,"&&",aws_dl2),wait=TRUE)
+  tar_dl2 <- "tar -xf ./data/SDM_tiles_WNA.tar.gz -C ./data/"
+  system(paste("cd",proj_dir,"&&",tar_dl2),wait=TRUE)
+}
 
 ##Downloads point data from Amazon S3 if it doesn't already exist.
-if(!file.exists("./data/occurences_final_2_1_2018.tar.gz")){
-  aws_dl3 <- "~/.local/bin/aws s3 cp s3://sdmdata/occurences/occurences_final_2_1_2018.tar.gz ./data/occurences_final_2_1_2018.tar.gz"
+if(!file.exists("./data/occurences_final_2_1_2017.tar.gz")){
+  aws_dl3 <- "~/.local/bin/aws s3 cp s3://sdmdata/occurences/occurences_final_2_1_2017.tar.gz ./data/occurences_final_2_1_2017.tar.gz"
   system(paste("cd",proj_dir,"&&",aws_dl3),wait=TRUE)
-  tar_dl3 <- "tar -xf ./data/occurences_final_2_1_2018.tar.gz -C ./data/"
+  tar_dl3 <- "tar -xf ./data/occurences_final_2_1_2017.tar.gz -C ./data/"
   system(paste("cd",proj_dir,"&&",tar_dl3),wait=TRUE)
 }
 
@@ -46,7 +46,7 @@ if(!file.exists("./data/Randolph_glacier_random_points_attrib.tar.gz")){
 }
 
 ##Reads data in
-spd <- read_csv("./data/occurences_final_2_1_2018.csv")
+spd <- read_csv("./data/occurences_final_2_1_2017.csv")
 glac <- read_csv("./data/Randolph_glacier_random_points_attrib.csv")
 glac <- glac[complete.cases(glac),]
 
@@ -91,11 +91,12 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                          print(paste("Fitting model for ",test_spp[i],"(",i,"of",length(test_spp),")"))
                          print(paste("Preparing data..."))
                          tr_pres_abs <- spd
+                         colnames(tr_pres_abs)[2:3] <- c("X","Y")
                          tr_pres_abs$TR_PRES <- as.numeric(tr_pres_abs$species==test_spp[i])
                          
-                         tr_pres <- as.data.frame(tr_pres_abs[tr_pres_abs$TR_PRES==1,c(1,2,17:ncol(tr_pres_abs))])
+                         tr_pres <- as.data.frame(tr_pres_abs[tr_pres_abs$TR_PRES==1,c(2,3,18:ncol(tr_pres_abs))])
                          
-                         tr_abs <- tr_pres_abs[tr_pres_abs$TR_PRES==0,c(1,2,17:ncol(tr_pres_abs))]
+                         tr_abs <- tr_pres_abs[tr_pres_abs$TR_PRES==0,c(2,3,18:ncol(tr_pres_abs))]
                          tr_abs <- tr_abs[-which(tr_abs$loc %in% unique(tr_pres$loc)),]
                          tr_abs <- as.data.frame(sample_n(tr_abs,size=max((nrow(tr_pres) * 5),6000)))
                          
@@ -143,7 +144,7 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                          ##Fits the models with heldout data to measure performance.
                          print(paste("Initial fitting..."))
                          
-                         tr_sdm1 <- sdm(TR_PRES ~ PLC_TRE + PLC_HRB + PCM_CMD + PCM_TD + PCM_PAS + PCM_DD5 + PCM_MAP + PSL_BDR + PSL_SND + PSL_CAR + PSL_PHO + PCL_SE1 + PCL_SE2 + PCL_MRA + PSW_DIS + PTP_RLV + PTP_WET + PCO_XSC + PCO_YSC,
+                         tr_sdm1 <- sdm(TR_PRES ~ PLC_TRE + PLC_HRB + PCM_CMD + PCM_TD + PCM_PAS + PCM_DD5 + PCM_MAP + PSL_BDR + PSL_SND + PSL_CAR + PSL_PHO + PCL_SE1 + PCL_SE2 + PCL_MRA + PSW_DIS + PTP_RLV + PTP_WET,
                                         data=tr_sdmd,methods=c("glm","gbm","svm","maxent"),interaction.depth=2,
                                         var.selection=FALSE)
                          
@@ -206,7 +207,7 @@ save(all_stats_tbl,file="./output/sdm_results.Rdata")
 
 ####Creates spatial predictions using the weighted average of the models.####
 
-tile_path <- paste(proj_dir,"/data/SDM_tiles_PNW/",sep="")
+tile_path <- paste(proj_dir,"/data/SDM_tiles_WNA/",sep="")
 model_path <-paste(proj_dir,"/scratch/sdm_fits/",sep="")
 out_path <- paste(proj_dir,"/output/PNW_tiles/",sep="")
 mosaic_path <- paste(proj_dir,"/output/PNW_mosaic/",sep="")
