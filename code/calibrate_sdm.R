@@ -15,28 +15,28 @@ out_dir <- "scratch/models_calib/"
 setwd(proj_dir)
 
 ##Downloads presence point data from Amazon S3 if it doesn't already exist.
-if(!file.exists("./data/occurences_final_1_9_2018.csv")){
-  aws_dl <- "~/.local/bin/aws s3 cp s3://sdmdata/occurences/occurences_final_1_9_2018.tar.gz ./data/occurences_final_1_9_2018.tar.gz"
+if(!file.exists("./data/occurences_final_2_1_2017.csv")){
+  aws_dl <- "~/miniconda2/bin/aws s3 cp s3://sdmdata/occurences/occurences_final_2_1_2017.tar.gz ./data/occurences_final_2_1_2017.tar.gz"
   system(paste("cd",proj_dir,"&&",aws_dl),wait=TRUE)
-  tar_dl <- "tar -xf ./data/occurences_final_1_9_2018.tar.gz -C ./data/"
+  tar_dl <- "tar -xf ./data/occurences_final_2_1_2017.tar.gz -C ./data/"
   system(paste("cd",proj_dir,"&&",tar_dl),wait=TRUE)
 }
 
 ##Downloads presence-absence point data from Amazon S3 if it doesn't already exist.
-if(!file.exists("./data/calibration_plotdata_1_26_2018.csv")){
-  aws_dl2 <- "~/.local/bin/aws s3 cp s3://sdmdata/occurences/calibration_plotdata_1_26_2018.tar.gz ./data/calibration_plotdata_1_26_2018.tar.gz"
+if(!file.exists("./data/calibration_plotdata_3_1_2018.csv")){
+  aws_dl2 <- "~/miniconda2/bin/aws s3 cp s3://sdmdata/occurences/calibration_plotdata_2_5_2018.tar.gz ./data/calibration_plotdata_2_5_2018.tar.gz"
   system(paste("cd",proj_dir,"&&",aws_dl2),wait=TRUE)
-  tar_dl2 <- "tar -xf ./data/calibration_plotdata_1_26_2018.tar.gz -C ./data/"
+  tar_dl2 <- "tar -xf ./data/calibration_plotdata_3_1_2018.tar.gz -C ./data/"
   system(paste("cd",proj_dir,"&&",tar_dl2),wait=TRUE)
 }
 
 ##Reads in presence data for species list.
-pres <- read_csv(paste(proj_dir,"data/occurences_final_1_9_2018.csv",sep=""))
+pres <- read_csv(paste(proj_dir,"data/occurences_final_2_1_2017.csv",sep=""))
 spp <- unique(pres$species)
 gen <- unique(pres$genus)
 
 ##Reads in presence-absence data.
-pres_abs <- read_csv(paste(proj_dir,"data/calibration_plotdata_1_26_2018.csv",sep=""))
+pres_abs <- read_csv(paste(proj_dir,"data/calibration_plotdata_3_1_2018.csv",sep=""))
 pres_abs <- filter(pres_abs,AcceptedGe %in% gen)
 
 pres_abs$PlotAreaHa[is.na(pres_abs$PlotAreaHa)] <- 0.04
@@ -50,16 +50,16 @@ set.seed(37)
 #registerDoParallel(cl)
 overwrite <- TRUE
 # 
-spp <- c("Xerophyllum tenax","Primula parryi", "Sidalcea oregana","Phacelia corymbosa", "Rubus parviflorus", "Mertensia paniculata",
-        "Vicia americana","Mimulus cardinalis","Boechera holboellii", "Dasiphora fruticosa", "Geum triflorum",
-        "Phlox diffusa", "Ivesia santolinoides", "Heliomeris multiflora", "Dodecatheon redolens", "Hulsea algida",
-        "Ligusticum grayi","Collinsia torreyi","Cardamine bellidifolia","Rhodiola integrifolia","Ranunculus inamoenus",
-        "Minuartia obtusiloba","Viola bakeri","Angelica breweri","Penstemon davidsonii","Solidago multiradiata")
+# spp <- c("Xerophyllum tenax","Primula parryi", "Sidalcea oregana","Phacelia corymbosa", "Rubus parviflorus", "Mertensia paniculata",
+#         "Vicia americana","Mimulus cardinalis","Boechera holboellii", "Dasiphora fruticosa", "Geum triflorum",
+#         "Phlox diffusa", "Ivesia santolinoides", "Heliomeris multiflora", "Dodecatheon redolens", "Hulsea algida",
+#         "Ligusticum grayi","Collinsia torreyi","Cardamine bellidifolia","Rhodiola integrifolia","Ranunculus inamoenus",
+#         "Minuartia obtusiloba","Viola bakeri","Angelica breweri","Penstemon davidsonii","Solidago multiradiata")
 #spp <- spp[1:7]
 
 ##PROBLEM: sdm predict() function fails when run in parallel with %dopar% or %dorng%
 
-cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
+cals <- foreach(i=179:length(spp),.packages=c("dplyr")) %do% {
   setwd(proj_dir)
   library(sdm)
   ##Defines local utility functions
@@ -276,7 +276,8 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     }
     
     ##Packages data and models.
-    out_list <- list(corr_data=corr_data,
+    out_list <- list(orig_stats=spp_stats,
+                     corr_data=corr_data,
                      corr_model=corr_gam,
                      calib_data=pres_abs_focal3,
                      calib_type=calib_type,
