@@ -9,14 +9,14 @@ library(raster)
 library(sdm)
 ##library(openblasctl)
 
-proj_dir <- "~/code/WesternNA_SDM/"
+proj_dir <- "~/WesternNA_SDM/"
 model_dir <- "scratch/models/"
 out_dir <- "scratch/models_calib/"
 setwd(proj_dir)
 
 ##Downloads presence point data from Amazon S3 if it doesn't already exist.
 if(!file.exists("./data/occurences_final_2_1_2017.csv")){
-  aws_dl <- "~/miniconda2/bin/aws s3 cp s3://sdmdata/occurences/occurences_final_2_1_2017.tar.gz ./data/occurences_final_2_1_2017.tar.gz"
+  aws_dl <- "~/.local/bin/aws s3 cp s3://sdmdata/occurences/occurences_final_2_1_2017.tar.gz ./data/occurences_final_2_1_2017.tar.gz"
   system(paste("cd",proj_dir,"&&",aws_dl),wait=TRUE)
   tar_dl <- "tar -xf ./data/occurences_final_2_1_2017.tar.gz -C ./data/"
   system(paste("cd",proj_dir,"&&",tar_dl),wait=TRUE)
@@ -24,7 +24,7 @@ if(!file.exists("./data/occurences_final_2_1_2017.csv")){
 
 ##Downloads presence-absence point data from Amazon S3 if it doesn't already exist.
 if(!file.exists("./data/calibration_plotdata_3_1_2018.csv")){
-  aws_dl2 <- "~/miniconda2/bin/aws s3 cp s3://sdmdata/occurences/calibration_plotdata_2_5_2018.tar.gz ./data/calibration_plotdata_2_5_2018.tar.gz"
+  aws_dl2 <- "~/.local/bin/aws s3 cp s3://sdmdata/occurences/calibration_plotdata_3_1_2018.tar.gz ./data/calibration_plotdata_3_1_2018.tar.gz"
   system(paste("cd",proj_dir,"&&",aws_dl2),wait=TRUE)
   tar_dl2 <- "tar -xf ./data/calibration_plotdata_3_1_2018.tar.gz -C ./data/"
   system(paste("cd",proj_dir,"&&",tar_dl2),wait=TRUE)
@@ -37,11 +37,11 @@ gen <- unique(pres$genus)
 
 ##Reads in presence-absence data.
 pres_abs <- read_csv(paste(proj_dir,"data/calibration_plotdata_3_1_2018.csv",sep=""))
-pres_abs <- filter(pres_abs,AcceptedGe %in% gen)
+pres_abs <- filter(pres_abs,acceptedge %in% gen)
 
-pres_abs$PlotAreaHa[is.na(pres_abs$PlotAreaHa)] <- 0.04
-pres_abs <- pres_abs[which(complete.cases(pres_abs[,19:50])),]
-pres_abs$Loc <- paste("W",round(pres_abs$X/200),"N",round(pres_abs$Y/200),sep="")
+pres_abs$plotareaha[is.na(pres_abs$plotareaha)] <- 0.04
+pres_abs <- pres_abs[which(complete.cases(pres_abs[,20:51])),]
+pres_abs$Loc <- paste("W",round(pres_abs$x/200),"N",round(pres_abs$y/200),sep="")
 
 ##Computes SDM corrections and calibrations for each focal species.
 set.seed(37)
@@ -59,7 +59,7 @@ overwrite <- TRUE
 
 ##PROBLEM: sdm predict() function fails when run in parallel with %dopar% or %dorng%
 
-cals <- foreach(i=179:length(spp),.packages=c("dplyr")) %do% {
+cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
   setwd(proj_dir)
   library(sdm)
   ##Defines local utility functions
@@ -72,7 +72,7 @@ cals <- foreach(i=179:length(spp),.packages=c("dplyr")) %do% {
   
   ##Checks to see if file already exists on S3
   fit_file <- paste("sdm_",gsub(" ","_",spp[i]),"_calib.Rdata",sep="")
-  file_exists_aws <- system(paste("~/miniconda2/bin/aws s3 ls",paste("s3://sdmdata/models_calibrated/",
+  file_exists_aws <- system(paste("~/.local/bin/aws s3 ls",paste("s3://sdmdata/models_calibrated/",
                                   fit_file,sep="")),wait=TRUE)
   
   if(file_exists_aws == 0 & overwrite==FALSE){
@@ -89,7 +89,7 @@ cals <- foreach(i=179:length(spp),.packages=c("dplyr")) %do% {
     model_file <- paste("sdm_",gsub(" ","_",spp[i]),".Rdata", sep="")
     s3_path <- paste("s3://sdmdata/models/",model_file, sep="")
     local_path <- paste(model_dir,model_file,sep="")
-    s3_dl_string <- paste("~/miniconda2/bin/aws s3 cp",s3_path,local_path)
+    s3_dl_string <- paste("~/.local/bin/aws s3 cp",s3_path,local_path)
     system(s3_dl_string,wait=TRUE)
     
     ##Loads fit model.
@@ -106,7 +106,7 @@ cals <- foreach(i=179:length(spp),.packages=c("dplyr")) %do% {
     
     ##Preps calibration data.
     print(paste("Prepping calibration data..."))
-    pres_focal <- filter(pres_abs, AcceptedNa == spp[i])
+    pres_focal <- filter(pres_abs, acceptedna == spp[i])
     pres_focal <- filter(pres_focal,!duplicated(Loc))
     if(nrow(pres_focal) > 0){
       pres_locs <- unique(pres_focal$Loc)
@@ -116,9 +116,9 @@ cals <- foreach(i=179:length(spp),.packages=c("dplyr")) %do% {
       pres_focal$PRES <- integer(0)
     }
     
-    focal_gen <- pres_focal$AcceptedGe[1]
-    gen_locs <- unique(pres_abs$Loc[pres_abs$AcceptedNa==paste(focal_gen,"NA")])
-    abs_focal <- filter(pres_abs, AcceptedNa != spp[i] &
+    focal_gen <- pres_focal$acceptedge[1]
+    gen_locs <- unique(pres_abs$Loc[pres_abs$acceptedna==paste(focal_gen,"NA")])
+    abs_focal <- filter(pres_abs, acceptedna != spp[i] &
                           !duplicated(Loc) &
                           !(Loc %in% pres_locs) &
                           !(Loc %in% gen_locs))
@@ -140,7 +140,7 @@ cals <- foreach(i=179:length(spp),.packages=c("dplyr")) %do% {
       pres_added$Loc <- paste("W",round(pres_added$X/200),"N",round(pres_added$Y/200),sep="")
       pres_added <- pres_added[,c(1,2,15:48,51)]
       pres_added$PRES <- 1
-      pres_added$PlotAreaHa <- 0.04
+      pres_added$plotareaha <- 0.04
       pres_added$train_test <- "train"
       pres_added$added <- TRUE
       names(pres_added) <- names(pres_abs_focal3)
@@ -236,12 +236,12 @@ cals <- foreach(i=179:length(spp),.packages=c("dplyr")) %do% {
     pred_prev <- mean(pres_abs_focal3$Corr_pred_prob) 
     
     ##Checks if a linear model has a positive slope.
-    calib_glm0 <- glm(PRES~Corr_pred+PlotAreaHa,data=pres_abs_focal3)
+    calib_glm0 <- glm(PRES~Corr_pred+plotareaha,data=pres_abs_focal3)
     pred_slope_glm0 <- coef(calib_glm0)[2]
     plot_slope_glm0 <- coef(calib_glm0)[1]
     if(pred_slope_glm0 > 0 & plot_slope_glm0 > 0){
       print(paste("Calibration slope > 0 plotsize slope > 0, Calibrating with plot size."))
-      calib_gam <- gam(PRES~s(Corr_pred,k=7)+PlotAreaHa,data=pres_abs_focal3,
+      calib_gam <- gam(PRES~s(Corr_pred,k=7)+plotareaha,data=pres_abs_focal3,
                        family=binomial(link = "logit"))
       ##Predicts calibrated values at pres-abs points
       pres_abs_focal3$Calib_pred <- predict(calib_gam,newdata=pres_abs_focal3,
@@ -297,7 +297,7 @@ cals <- foreach(i=179:length(spp),.packages=c("dplyr")) %do% {
     saveRDS(out_list,file=out_path)
     
     ##Uploads to S3
-    upl_string <- paste("~/miniconda2/bin/aws s3 cp",out_path,paste("s3://sdmdata/models_calibrated/",out_name,sep=""))
+    upl_string <- paste("~/.local/bin/aws s3 cp",out_path,paste("s3://sdmdata/models_calibrated/",out_name,sep=""))
     system(upl_string,wait=TRUE)
     
     ##Removes local files.
@@ -327,7 +327,7 @@ cals <- foreach(i=179:length(spp),.packages=c("dplyr")) %do% {
     #                              overwrite=TRUE,filename="~/GIS/Xerophyllum_tenax_corrected.img")
     # calib_brick <- brick(corr_pred,corr_pred)
     # calib_brick[[2]] <- 0.04
-    # names(calib_brick) <- c("Corr_pred","PlotAreaHa")
+    # names(calib_brick) <- c("Corr_pred","plotareaha")
     # Calib_pred <- raster::predict(calib_brick, model=calib_gam, type="response", progress="text",
     #                               filename="~/GIS/Xerophyllum_tenax_calibrated.img",overwrite=TRUE)
   }
