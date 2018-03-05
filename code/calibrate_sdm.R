@@ -16,9 +16,9 @@ setwd(proj_dir)
 
 ##Downloads presence point data from Amazon S3 if it doesn't already exist.
 if(!file.exists("./data/occurences_final_2_1_2017.csv")){
-  aws_dl <- "~/.local/bin/aws s3 cp s3://sdmdata/occurences/occurences_final_2_1_2017.tar.gz ./data/occurences_final_2_1_2017.tar.gz"
+  aws_dl <- "~/.local/bin/aws s3 cp s3://sdmdata/occurences/occurences_final_3_1_2018.tar.gz ./data/occurences_final_3_1_2018.tar.gz"
   system(paste("cd",proj_dir,"&&",aws_dl),wait=TRUE)
-  tar_dl <- "tar -xf ./data/occurences_final_2_1_2017.tar.gz -C ./data/"
+  tar_dl <- "tar -xf ./data/occurences_final_3_1_2018.tar.gz -C ./data/"
   system(paste("cd",proj_dir,"&&",tar_dl),wait=TRUE)
 }
 
@@ -31,7 +31,7 @@ if(!file.exists("./data/calibration_plotdata_3_1_2018.csv")){
 }
 
 ##Reads in presence data for species list.
-pres <- read_csv(paste(proj_dir,"data/occurences_final_2_1_2017.csv",sep=""))
+pres <- read_csv(paste(proj_dir,"data/occurences_final_3_1_2018.csv",sep=""))
 spp <- unique(pres$species)
 gen <- unique(pres$genus)
 
