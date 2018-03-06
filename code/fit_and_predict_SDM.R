@@ -30,10 +30,10 @@ if(!file.exists("./data/SDM_tiles_WNA.tar.gz")){
 }
 
 ##Downloads point data from Amazon S3 if it doesn't already exist.
-if(!file.exists("./data/occurences_final_2_1_2017.tar.gz")){
-  aws_dl3 <- "~/.local/bin/aws s3 cp s3://sdmdata/occurences/occurences_final_2_1_2017.tar.gz ./data/occurences_final_2_1_2017.tar.gz"
+if(!file.exists("./data/occurences_final_3_1_2017.tar.gz")){
+  aws_dl3 <- "~/.local/bin/aws s3 cp s3://sdmdata/occurences/occurences_final_3_1_2018.tar.gz ./data/occurences_final_3_1_2018.tar.gz"
   system(paste("cd",proj_dir,"&&",aws_dl3),wait=TRUE)
-  tar_dl3 <- "tar -xf ./data/occurences_final_2_1_2017.tar.gz -C ./data/"
+  tar_dl3 <- "tar -xf ./data/occurences_final_3_1_2017.tar.gz -C ./data/"
   system(paste("cd",proj_dir,"&&",tar_dl3),wait=TRUE)
 }
 
@@ -46,27 +46,25 @@ if(!file.exists("./data/Randolph_glacier_random_points_attrib.tar.gz")){
 }
 
 ##Reads data in
-spd <- read_csv("./data/occurences_final_2_1_2017.csv")
+spd <- read_csv("./data/occurences_final_3_1_2018.csv")
 glac <- read_csv("./data/Randolph_glacier_random_points_attrib.csv")
 glac <- glac[complete.cases(glac),]
 
 ##Species list for analysis
 test_spp <- unique(spd$species)
 #test_spp <- sample(unique(spd$species),size=50,replace=FALSE)
- test_spp <- c("Cryptantha nubigena",
-               "Drymocallis glandulosa",
+ test_spp <- c("Aquilegia caerulea",
+               "Gentianopsis simplex",
                "Ligusticum porteri",
-               "Mertensia paniculata",
-               "Phacelia corymbosa",
-               "Mimulus guttatus",
-               "Potentilla gracilis",
-               "Sorbus californica",
-               "Frasera speciosa")
+               "Mimulus primuloides",
+               "Pericome caudata",
+               "Raillardella scaposa",
+               "Ranunculus adoneus")
 
 ## Model fitting for focal species.
 set.seed(38)
 
-cl <- makeCluster(9)
+cl <- makeCluster(7)
 registerDoParallel(cl)
 overwrite <- TRUE
 
