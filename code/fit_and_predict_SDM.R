@@ -59,7 +59,22 @@ test_spp <- unique(spd$species)
                "Mimulus primuloides",
                "Pericome caudata",
                "Raillardella scaposa",
-               "Ranunculus adoneus")
+               "Ranunculus adoneus",
+               "Mimulus guttatus",
+               "Vicia americana",
+               "Senecio integerrimus",
+               "Veronica serpyllifolia",
+               "Eremogone congesta",
+               "Chamerion angustifolium",
+               "Maianthemum stellatum",
+               "Phacelia heterophylla",
+               "Sedum stenopetalum",
+               "Ipomopsis aggregata",
+               "Claytonia lanceolata",
+               "Rudbeckia occidentalis",
+               "Veratrum californicum",
+               "Agoseris aurantiaca",
+               "Sedum lanceolatum")
 
 ## Model fitting for focal species.
 set.seed(38)
@@ -96,7 +111,7 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                          
                          tr_abs <- tr_pres_abs[tr_pres_abs$TR_PRES==0,c(2,3,18:ncol(tr_pres_abs))]
                          tr_abs <- tr_abs[-which(tr_abs$loc %in% unique(tr_pres$loc)),]
-                         tr_abs <- as.data.frame(sample_n(tr_abs,size=max((nrow(tr_pres) * 5),6000)))
+                         tr_abs <- as.data.frame(sample_n(tr_abs,size=max((nrow(tr_pres) * 10),12000)))
                          
                          ##Adds a fixed proportion of random absences on glaciers.
                          n_abs <- nrow(tr_abs)
@@ -144,7 +159,7 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                          
                          tr_sdm1 <- sdm(TR_PRES ~ PLC_TRE + PLC_HRB + PCM_CMD + PCM_TD + PCM_PAS + PCM_DD5 + PCM_MAP + PSL_BDR + PSL_SND + PSL_CAR + PSL_PHO + PCL_SE1 + PCL_SE2 + PCL_MRA + PSW_DIS + PTP_RLV + PTP_WET,
                                         data=tr_sdmd,methods=c("glm","gbm","svm","maxent"),interaction.depth=2,
-                                        var.selection=FALSE)
+                                        var.selection=FALSE,modelSettings=list(brt=list(n.trees=3000,bag.fraction=0.8)))
                          
                          print(tr_sdm1)
                          
@@ -171,7 +186,7 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                                              train=all_data)
                          sdm_all <- sdm(TR_PRES ~ PLC_TRE + PLC_HRB + PCM_CMD + PCM_TD + PCM_PAS + PCM_DD5 + PCM_MAP + PSL_BDR + PSL_SND + PSL_CAR + PSL_PHO + PCL_SE1 + PCL_SE2 + PCL_MRA + PSW_DIS + PTP_RLV + PTP_WET + PCO_XSC + PCO_YSC,
                                         data=tr_sdmd2,methods=c("glm","gbm","svm","maxent"),interaction.depth=2,
-                                        var.selection=FALSE)
+                                        var.selection=FALSE,modelSettings=list(brt=list(n.trees=3000,bag.fraction=0.8)))
                          print(sdm_all)
                          out <- list(list(data=all_data,final_models=sdm_all,stats=tr_sdm_stats))
                          names(out) <- test_spp[i]

@@ -107,13 +107,13 @@ abline(v=0,lty=2)
 
 library(ggplot2)
 library(gridExtra)
-ggplot(subset(calib_stats,eval_np>10))+
+ggplot(subset(calib_stats,eval_np>20))+
   geom_point(aes(x=eval_AUC,y=AUC_imp,size=log(eval_np)))+
   #scale_y_continuous(limits=c(-0.05,0.15))+
   scale_size_continuous(range=c(0.0001,3))+
   theme_bw()
 
-p1 <- ggplot(subset(calib_stats,eval_np>10))+
+p1 <- ggplot(subset(calib_stats,eval_np>20))+
   geom_point(aes(x=eval_AUC,y=calib_AUC,size=(eval_np/(eval_np+eval_na))),
              fill="white",shape=21)+
   geom_abline(aes(intercept=0,slope=1),linetype="dotted")+
@@ -123,7 +123,7 @@ p1 <- ggplot(subset(calib_stats,eval_np>10))+
   theme_bw()+
   theme(panel.grid=element_blank())
 
-p2 <- ggplot(subset(calib_stats,eval_np>10))+
+p2 <- ggplot(subset(calib_stats,eval_np>20))+
   geom_point(aes(x=eval_cal,y=calib_cal,size=(eval_np/(eval_np+eval_na))),
              fill="white",shape=21)+
   geom_abline(aes(intercept=0,slope=1),linetype="dotted")+
@@ -133,6 +133,16 @@ p2 <- ggplot(subset(calib_stats,eval_np>10))+
   theme_bw()+
   theme(panel.grid=element_blank())
 
+pdf("./figs/calibration_AUC.pdf",width=10,height=4)
 grid.arrange(p1,p2,ncol=2)
+dev.off()
 
-
+p2 <- ggplot(subset(calib_stats,eval_np>20))+
+  geom_point(aes(x=(orig_np/(orig_np+orig_na)),y=orig_AUC_te),
+             fill="white",shape=21)+
+  #geom_abline(aes(intercept=0,slope=1),linetype="dotted")+
+  scale_y_continuous("AUC (Calibrated Model)",limits=c(0.4,1))+
+  #scale_x_continuous("Calibration (Original Model)",limits=c(0.4,1))+
+  scale_size_continuous("Prevalence",range=c(0.0001,5),breaks=c(0.001,0.01,0.1))+
+  theme_bw()+
+  theme(panel.grid=element_blank())
