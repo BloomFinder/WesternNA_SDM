@@ -85,10 +85,12 @@ cl <- makeCluster(3)
 registerDoParallel(cl)
 overwrite <- TRUE
 
-all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl"),
+all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr"),
                      .combine="rbind") %dorng% {
                        
                        setwd(proj_dir)
+                       library(sdm)
+                       #library(openblasctl)
                        
                        sdm::getmethodNames()
                        source(paste(proj_dir,"/code/svm4.R",sep=""))
@@ -168,7 +170,8 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                          tr_sdm1 <- sdm(TR_PRES ~ PLC_TRE + PLC_HRB + PCM_CMD + PCM_TD + PCM_PAS + PCM_DD5 + PCM_MAP + PSL_BDR + PSL_SND + PSL_CAR + PSL_PHO + PCL_SE1 + PCL_SE2 + PCL_MRA + PSW_DIS + PTP_RLV + PTP_WET,
                                         data=tr_sdmd,methods=c("gbmstep3","svm4","maxent"),
                                         var.selection=FALSE,modelSettings=list(svm4=list(C=1),gbmstep3=list(learning.rate=0.01,
-                                                                                                            n.trees=200)))
+                                                                                                            n.trees=200,
+                                                                                                            n.cores=1)))
                          
                          print(tr_sdm1)
                          
@@ -193,7 +196,8 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","sdm","openblasctl
                          sdm_all <- sdm(TR_PRES ~ PLC_TRE + PLC_HRB + PCM_CMD + PCM_TD + PCM_PAS + PCM_DD5 + PCM_MAP + PSL_BDR + PSL_SND + PSL_CAR + PSL_PHO + PCL_SE1 + PCL_SE2 + PCL_MRA + PSW_DIS + PTP_RLV + PTP_WET,
                                         data=tr_sdmd2,methods=c("gbmstep3","svm4","maxent"),
                                         var.selection=FALSE,modelSettings=list(svm4=list(C=1),gbmstep3=list(learning.rate=0.01,
-                                                                                                            n.trees=200)))
+                                                                                                            n.trees=200,
+                                                                                                            n.cores=1)))
                          print(sdm_all)
                          out <- list(list(data=all_data,final_models=sdm_all,stats=tr_sdm_stats))
                          names(out) <- test_spp[i]
