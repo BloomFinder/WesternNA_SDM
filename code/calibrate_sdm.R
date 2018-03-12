@@ -103,7 +103,7 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
   
   
   ##Defines local utility functions
-  logit <- function(x){log(replace(x,x < 1e-4, 1e-4)/(1-replace(x,x < 1e-4, 1e-4)))} 
+  logit <- function(x){log(replace(x,x < 1e-7, 1e-7)/(1-replace(x,x < 1e-7, 1e-7)))} 
   inv_logit <- function(x){exp(x)/(1+exp(x))}
   wfun <- function(x){weighted.mean(x,w=spp_weights)}
   
@@ -189,12 +189,14 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
 
     ens_pred <- predict(spp_sdm,newdata=pres_abs_focal3,type="response")
     pres_abs_focal3$Ens_pred <- apply(ens_pred,FUN=wfun,MARGIN = 1)
-    pres_abs_focal3$Ens_pred[pres_abs_focal3$Ens_pred <= 1e-4] <- 1e-4
+    pres_abs_focal3$Ens_pred[pres_abs_focal3$Ens_pred <= 1e-7] <- 1e-7
+    pres_abs_focal3$Ens_pred[pres_abs_focal3$Ens_pred > (1 - 1e-7)] <- (1 - 1e-7)
     pres_abs_focal3$pred_logit <- logit(pres_abs_focal3$Ens_pred)
     
     ens_pred_test <- predict(spp_sdm,newdata=pres_abs_test,type="response")
     pres_abs_test$Ens_pred <- apply(ens_pred_test,FUN=wfun,MARGIN = 1)
-    pres_abs_test$Ens_pred[pres_abs_test$Ens_pred <= 1e-4] <- 1e-4
+    pres_abs_test$Ens_pred[pres_abs_test$Ens_pred <= 1e-7] <- 1e-7
+    pres_abs_test$Ens_pred[pres_abs_test$Ens_pred > (1 - 1e-7)] <- (1 - 1e-7)
     pres_abs_test$pred_logit <- logit(pres_abs_test$Ens_pred)
     
     ##Measures baseline performance of model on independent data.
@@ -209,7 +211,9 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     spp_data <- spp_data[complete.cases(spp_data[,3:35]),]
     pred_all <- predict(model[[1]]$final_models,newdata=spp_data)
     pred_weighted <- apply(pred_all,FUN=wfun,MARGIN = 1)
-    pred_weighted[pred_weighted <= 1e-4] <- 1e-4
+    pred_weighted[pred_weighted <= 1e-7] <- 1e-7
+    pred_weighted[pred_weighted >= (1 - 1e-7)] <- (1 - 1e-7)
+    
     
     pred_logit <- logit(pred_weighted)
     corr_data <- spp_data
@@ -219,12 +223,12 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     ##Fits the kriging model for geographic correction.
     print(paste("Kriging with presence-background data..."))
 
-    corr_gam <- gam(TR_PRES~s(pred_logit,k=6)+s(PCO_XSC,PCO_YSC,bs="gp"),data=corr_data,
+    corr_gam <- gam(TR_PRES~s(pred_logit,k=7)+s(PCO_XSC,PCO_YSC,bs="gp"),data=corr_data,
                     family=binomial(link = "logit"))
     
     ##Predicts for heldout data.
     Corr_pred <- predict(corr_gam,newdata=pres_abs_focal3)
-    Corr_pred[Corr_pred < -10] <- -10
+    #Corr_pred[Corr_pred < -10] <- -10
     Corr_pred_prob <- inv_logit(Corr_pred)
     pres_abs_corr_eval <- evaluate(p=as.numeric(Corr_pred_prob[pres_abs_focal3$PRES==1]),
                                    a=as.numeric(Corr_pred_prob[pres_abs_focal3$PRES==0]))
@@ -233,7 +237,7 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     print(paste("Baseline corrected AUC",round(base_AUC,4)))
     
     if(sum(pres_abs_test$PRES,na.rm=TRUE) > 3){
-      ks <- c(20,40,60,80)
+      ks <- c(20,40,60,80,100)
       corr_gam_test <- as.list(rep(NA,length(ks)))
       new_AUC <- rep(NA,length(ks))
       for(j in 1:length(ks)){
@@ -277,6 +281,7 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     calib_glm0 <- glm(PRES~Corr_pred+plotareaha,data=pres_abs_focal3)
     pred_slope_glm0 <- coef(calib_glm0)[2]
     plot_slope_glm0 <- coef(calib_glm0)[1]
+    
     if(pred_slope_glm0 > 0 & plot_slope_glm0 > 0){
       print(paste("Calibration slope > 0 plotsize slope > 0, Calibrating with plot size."))
       calib_gam <- gam(PRES~s(Corr_pred,k=4)+plotareaha,data=pres_abs_focal3,
