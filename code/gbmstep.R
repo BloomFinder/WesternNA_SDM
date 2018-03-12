@@ -33,7 +33,7 @@ methodInfo <- list(name=c('gbmstep3'),
                    },
                    tuneParams = NULL,
                    predictParams=list(object='model',newdata='sdmDataFrame'),
-                   predictSettings=list(n.trees=1000,type='response'),
+                   predictSettings=list(n.trees=6000,type='response'),
                    predictFunction='predict.gbm',
                    #------ metadata (optional):
                    title='Boosted Regression Trees',

@@ -21,11 +21,16 @@ aws_path <- "~/miniconda2/bin/"
 setwd(proj_dir)
 
 ##Adds custom svm function to sdm package.
-getmethodNames()
-source("./code/svm4.R")
-sdm::add(x=methodInfo,w='sdm',echo=TRUE)
-source("./code/gbmstep.R")
-sdm::add(x=methodInfo,w='sdm',echo=TRUE)
+#mnames <- names(sdm::getmethodNames())
+#if(!("svm4" %in% mnames)){
+#  source(paste(proj_dir,"/code/svm4.R",sep=""))
+#  sdm::add(methodInfo,w='sdm')
+#}
+#if(!("gbmstep3" %in% mnames)){
+#  source(paste(proj_dir,"/code/gbmstep.R",sep=""))
+#  sdm::add(methodInfo,w='sdm')
+#}
+
 
 ##Downloads presence point data from Amazon S3 if it doesn't already exist.
 if(!file.exists("./data/occurences_final_3_1_2018.csv")){
@@ -63,22 +68,40 @@ set.seed(37)
 #registerDoParallel(cl)
 overwrite <- TRUE
 # 
- spp <- c("Aquilegia caerulea", "Gentianopsis simplex", "Ligusticum porteri",
-        "Mimulus primuloides", "Pericome caudata", "Raillardella scaposa","Ranunculus adoneus",
-        "Mimulus guttatus", "Vicia americana", "Senecio integerrimus", "Veronica serpyllifolia",
-        "Eremogone congesta", "Chamerion angustifolium", "Maianthemum stellatum","Phacelia heterophylla",
-        "Sedum stenopetalum", "Ipomopsis aggregata","Claytonia lanceolata", "Rudbeckia occidentalis",
-        "Veratrum californicum", "Agoseris aurantiaca", "Sedum lanceolatum", "Castilleja miniata",
-        "Viola adunca", "Linum lewisii", "Eriogonum umbellatum", "Aquilegia formosa","Bistorta bistortoides",
-        "Delphinium nuttallianum","Apocynum androsaemifolium","Anaphalis margaritacea")
+spp <- c("Aquilegia formosa",
+        "Ranunculus adoneus",
+        "Mimulus guttatus",
+        "Vicia americana",
+        "Chamerion angustifolium",
+        "Maianthemum stellatum",
+        "Phacelia heterophylla",
+        "Sedum stenopetalum",
+        "Ipomopsis aggregata",
+        "Claytonia lanceolata",
+        "Rudbeckia occidentalis",
+        "Veratrum californicum",
+        "Agoseris aurantiaca",
+        "Sedum lanceolatum",
+        "Xerophyllum tenax")
 #spp <- spp[1:7]
-spp <- "Aquilegia caerulea"
 
 ##PROBLEM: sdm predict() function fails when run in parallel with %dopar% or %dorng%
 
 cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
   setwd(proj_dir)
   library(sdm)
+  
+  mnames <- names(sdm::getmethodNames())
+  if(!("svm4" %in% mnames)){
+    source(paste(proj_dir,"/code/svm4.R",sep=""))
+    sdm::add(methodInfo,w='sdm')
+  }
+  if(!("gbmstep3" %in% mnames)){
+    source(paste(proj_dir,"/code/gbmstep.R",sep=""))
+    sdm::add(methodInfo,w='sdm')
+  }
+  
+  
   ##Defines local utility functions
   logit <- function(x){log(replace(x,x < 1e-4, 1e-4)/(1-replace(x,x < 1e-4, 1e-4)))} 
   inv_logit <- function(x){exp(x)/(1+exp(x))}
@@ -104,10 +127,10 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     
     ##Downloads model from S3
     model_file <- paste("sdm_",gsub(" ","_",spp[i]),".Rdata", sep="")
-    s3_path <- paste("s3://sdmdata/models/",model_file, sep="")
+    #s3_path <- paste("s3://sdmdata/models/",model_file, sep="")
     local_path <- paste(model_dir,model_file,sep="")
-    s3_dl_string <- paste(aws_path,"aws s3 cp ",s3_path," ",local_path, sep="")
-    system(s3_dl_string,wait=TRUE)
+    #s3_dl_string <- paste(aws_path,"aws s3 cp ",s3_path," ",local_path, sep="")
+    #system(s3_dl_string,wait=TRUE)
     
     ##Loads fit model.
     print(paste("Loading model..."))
@@ -115,10 +138,7 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     spp_stats <- model[[1]]$stats
     spp_sdm <- model[[1]]$final_models
     spp_weights <- spp_stats$ensemble_weight
-    spp_pred1 <- model[[1]]$final_models@models$TR_PRES$gbmstep3$'1'@evaluation$training@predicted
-    spp_pred3 <- model[[1]]$final_models@models$TR_PRES$svm4$'2'@evaluation$training@predicted
-    spp_pred4 <- model[[1]]$final_models@models$TR_PRES$maxent$'3'@evaluation$training@predicted
-    
+   
     ##Preps calibration data.
     print(paste("Prepping calibration data..."))
     pres_focal <- filter(pres_abs, acceptedna == spp[i])
@@ -209,15 +229,14 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     pres_abs_corr_eval <- evaluate(p=as.numeric(Corr_pred_prob[pres_abs_focal3$PRES==1]),
                                    a=as.numeric(Corr_pred_prob[pres_abs_focal3$PRES==0]))
     base_AUC <- pres_abs_corr_eval@auc
+    corr_k <- NA
     print(paste("Baseline corrected AUC",round(base_AUC,4)))
-    
     
     if(sum(pres_abs_test$PRES,na.rm=TRUE) > 3){
       ks <- c(20,40,60,80)
       corr_gam_test <- as.list(rep(NA,length(ks)))
       new_AUC <- rep(NA,length(ks))
       for(j in 1:length(ks)){
-        print(paste("Testing k =",ks[j]))
         corr_gam_test[[j]] <- try(gam(TR_PRES~s(pred_logit,k=7)+s(PCO_XSC,PCO_YSC,bs="gp",k=ks[j]),data=corr_data,
                                   family=binomial(link = "logit")))
         Corr_pred_test <- predict(corr_gam_test[[j]],newdata=pres_abs_focal3)
@@ -226,10 +245,12 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
         Corr_pred_test_eval <- evaluate(p=as.numeric(Corr_pred_test_prob[pres_abs_focal3$PRES==1]),
                                         a=as.numeric(Corr_pred_test_prob[pres_abs_focal3$PRES==0]))
         new_AUC[j] <- Corr_pred_test_eval@auc
+        print(paste("Testing k =",ks[j],", corrected AUC", new_AUC[j]))
       }
       if(any(new_AUC > base_AUC)){
         base_AUC <- max(new_AUC)
         corr_gam <- corr_gam_test[[which.max(new_AUC)]]
+        corr_k <- ks[which.max(new_AUC)]
       }
     }
     print(paste("Best Corrected AUC",round(base_AUC,digits=4)))
@@ -296,6 +317,7 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     out_list <- list(orig_stats=spp_stats,
                      corr_data=corr_data,
                      corr_model=corr_gam,
+                     corr_k=corr_k,
                      calib_data=pres_abs_focal3,
                      calib_type=calib_type,
                      obs_prev=obs_prev,
@@ -304,11 +326,11 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
                      calib_model=calib_gam,
                      test_data=pres_abs_test)
     
-    library(ggplot2)
-    ggplot(out_list$test_data)+
-      geom_point(aes(x=x,y=y,color=(Ens_pred)))+
-      scale_color_distiller(type="div")+
-      theme_bw()
+    #library(ggplot2)
+    #ggplot(out_list$test_data)+
+    #  geom_point(aes(x=x,y=y,color=(Ens_pred)))+
+    #  scale_color_distiller(type="div")+
+    #  theme_bw()
     
     ##Writes output to disk.
     out_name <- gsub(".Rdata","_calib.Rdata",model_file,fixed=TRUE)
