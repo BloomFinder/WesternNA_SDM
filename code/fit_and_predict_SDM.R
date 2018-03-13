@@ -179,8 +179,8 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr"),
                                         var.selection=FALSE,modelSettings=list(gbmstep3=list(learning.rate=0.02,
                                                                                               n.trees=200,
                                                                                               n.cores=1)),
-                                                                               maxent=list(beta=4),
-                                                                               svm=list(epsilon=8))
+                                                                               maxent=list(beta=2),
+                                                                               svm=list(epsilon=5))
                          
                          print(tr_sdm1)
                          
