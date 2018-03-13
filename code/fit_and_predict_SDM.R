@@ -7,12 +7,12 @@ library(doParallel)
 library(gdalUtils)
 library(doRNG)
 library(raster)
-#devtools::install_github("wrathematics/openblasctl")
-#library(openblasctl)
+devtools::install_github("wrathematics/openblasctl")
+library(openblasctl)
 
-proj_dir <- "/Users/Ian/code/WesternNA_SDM"
-#aws_path <- "~/.local/bin/"
-aws_path <- "/Users/ian/miniconda2/bin/"
+proj_dir <- "/home/rstudio/WesternNA_SDM"
+aws_path <- "/home/rstudio/.local/bin/"
+#aws_path <- "/Users/ian/miniconda2/bin/"
 setwd(proj_dir)
 
 #mnames <- names(sdm::getmethodNames())
@@ -84,11 +84,11 @@ test_spp <- c("Aquilegia formosa",
 ## Model fitting for focal species.
 set.seed(38)
 
-cl <- makeCluster(3)
+cl <- makeCluster(95)
 registerDoParallel(cl)
 overwrite <- TRUE
 
-all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr"),
+all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","openblasctl"),
                      .combine="rbind") %dorng% {
                        
                        setwd(proj_dir)
@@ -106,7 +106,7 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr"),
                        }
                        
                        ##Prevents multithreaded linear algebra library from parallelizing.
-                       #openblas_set_num_threads(1)
+                       openblas_set_num_threads(1)
                        
                        ##Checks if model file already exists on AWS.
                        fit_file <- paste(proj_dir,"/scratch/models/sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
@@ -176,11 +176,11 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr"),
                          
                          tr_sdm1 <- sdm(TR_PRES ~ PLC_TRE + PLC_HRB + PCM_CMD + PCM_TD + PCM_PAS + PCM_DD5 + PCM_MAP + PSL_BDR + PSL_SND + PSL_CAR + PSL_PHO + PCL_SE1 + PCL_SE2 + PCL_MRA + PSW_DIS + PTP_RLV + PTP_WET,
                                         data=tr_sdmd,methods=c("gbmstep3","svm","maxent"),
-                                        var.selection=FALSE,modelSettings=list(gbmstep3=list(learning.rate=0.02,
+                                        var.selection=FALSE,modelSettings=list(gbmstep3=list(learning.rate=0.01,
                                                                                               n.trees=200,
                                                                                               n.cores=1)),
                                                                                maxent=list(beta=2),
-                                                                               svm=list(epsilon=5))
+                                                                               svm=list(epsilon=10))
                          
                          print(tr_sdm1)
                          
@@ -204,11 +204,11 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr"),
                                              train=all_data)
                          sdm_all <- sdm(TR_PRES ~ PLC_TRE + PLC_HRB + PCM_CMD + PCM_TD + PCM_PAS + PCM_DD5 + PCM_MAP + PSL_BDR + PSL_SND + PSL_CAR + PSL_PHO + PCL_SE1 + PCL_SE2 + PCL_MRA + PSW_DIS + PTP_RLV + PTP_WET,
                                         data=tr_sdmd2,methods=c("gbmstep3","svm","maxent"),
-                                        var.selection=FALSE,modelSettings=list(gbmstep3=list(learning.rate=0.02,
+                                        var.selection=FALSE,modelSettings=list(gbmstep3=list(learning.rate=0.01,
                                                                                              n.trees=200,
                                                                                              n.cores=1)),
-                                                                              maxent=list(beta=4),
-                                                                              svm=list(epsilon=8))
+                                                                              maxent=list(beta=2),
+                                                                              svm=list(epsilon=10))
                          print(sdm_all)
                          out <- list(list(data=all_data,final_models=sdm_all,stats=tr_sdm_stats))
                          names(out) <- test_spp[i]
@@ -221,16 +221,16 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr"),
                          
                          
                          ##Copies model file to S3.
-                         #cp_string <- paste(aws_path,"aws s3 cp ",fit_file,
-                         #                   paste("s3://sdmdata/models/sdm_", gsub(" ","_",test_spp[i]), ".Rdata",sep=""))
-                         #system(cp_string,wait=TRUE)
+                         cp_string <- paste(aws_path,"aws s3 cp ",fit_file," ",
+                                            paste("s3://sdmdata/models/sdm_", gsub(" ","_",test_spp[i]), ".Rdata",sep=""),sep="")
+                         system(cp_string,wait=TRUE)
                          
                          ##Removes file locally if it was successfully uploaded.
-                         #file_exists_aws2 <- system(paste(aws_path,"aws s3 ls s3://sdmdata/models/sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep=""))
+                         file_exists_aws2 <- system(paste(aws_path,"aws s3 ls s3://sdmdata/models/sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep=""))
                          
-                         #if(file_exists_aws2==0){
-                         #  system(paste("rm",fit_file),wait=TRUE)
-                         #}
+                         if(file_exists_aws2==0){
+                           system(paste("rm",fit_file),wait=TRUE)
+                         }
                          (tr_sdm_stats)
                        }
                      }
