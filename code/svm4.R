@@ -10,8 +10,7 @@ methodInfo <- list(name=c('svm4','SVM4','ksvm4'),
                    packages='kernlab',
                    modelTypes = c('pa','pb','ab','n'),
                    fitParams = list(x='standard.formula',data='sdmDataFrame'),
-                   fitSettings = list(type='C-svc',kernel='rbfdot',epsilon=0.1,
-                                      prob.model=TRUE,shrinking=TRUE,C=50),
+                   fitSettings = list(type='C-svc',kernel='rbfdot',prob.model=TRUE,shrinking=TRUE),
                    fitFunction = 'ksvm',
                    settingRules = function(x='sdmVariables',f='fitSettings') {
                      if (x@distribution == 'multinomial') f[['type']] <- 'C-svc'

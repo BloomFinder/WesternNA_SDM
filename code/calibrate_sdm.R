@@ -68,21 +68,33 @@ set.seed(37)
 #registerDoParallel(cl)
 overwrite <- TRUE
 # 
-spp <- c("Aquilegia formosa",
-        "Ranunculus adoneus",
-        "Mimulus guttatus",
-        "Vicia americana",
-        "Chamerion angustifolium",
-        "Maianthemum stellatum",
-        "Phacelia heterophylla",
-        "Sedum stenopetalum",
-        "Ipomopsis aggregata",
-        "Claytonia lanceolata",
-        "Rudbeckia occidentalis",
-        "Veratrum californicum",
-        "Agoseris aurantiaca",
-        "Sedum lanceolatum",
-        "Xerophyllum tenax")
+spp <- c("Agastache pallidiflora",
+         "Campanula scabrella",
+         "Asclepias tuberosa",
+         "Agrimonia striata",
+         "Ageratina_herbacea",
+         "Calochortus gunnisonii",
+         "Anemone multifida",
+         "Cassiope mertensiana",
+         "Arnica latifolia",
+         "Aconitum columbianum",
+         "Agastache urticifolia",
+         "Bistorta bistortoides",
+         "Ceanothus velutinus",
+         "Conioselinum_scopulorum",
+         "Balsamorhiza sagittata",
+         "Erythronium montanum",
+         "Amelanchier utahensis",
+         "Ligusticum porteri",
+         "Lilium columbianum",
+         "Oplopanax horridus",
+         "Oreostemma alpigenum",
+         "Maianthemum racemosum",
+         "Pedicularis contorta",
+         "Pedicularis attollens",
+         "Silene douglasii",
+         "Rosa woodsii",
+         "Xerophyllum tenax")
 #spp <- spp[1:7]
 
 ##PROBLEM: sdm predict() function fails when run in parallel with %dopar% or %dorng%
@@ -103,7 +115,7 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
   
   
   ##Defines local utility functions
-  logit <- function(x){log(replace(x,x < 1e-7, 1e-7)/(1-replace(x,x < 1e-7, 1e-7)))} 
+  logit <- function(x){log(replace(x,x < 1e-4, 1e-4)/(1-replace(x,x < 1e-4, 1e-4)))} 
   inv_logit <- function(x){exp(x)/(1+exp(x))}
   wfun <- function(x){weighted.mean(x,w=spp_weights)}
   
@@ -127,10 +139,10 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     
     ##Downloads model from S3
     model_file <- paste("sdm_",gsub(" ","_",spp[i]),".Rdata", sep="")
-    #s3_path <- paste("s3://sdmdata/models/",model_file, sep="")
+    s3_path <- paste("s3://sdmdata/models/",model_file, sep="")
     local_path <- paste(model_dir,model_file,sep="")
-    #s3_dl_string <- paste(aws_path,"aws s3 cp ",s3_path," ",local_path, sep="")
-    #system(s3_dl_string,wait=TRUE)
+    s3_dl_string <- paste(aws_path,"aws s3 cp ",s3_path," ",local_path, sep="")
+    system(s3_dl_string,wait=TRUE)
     
     ##Loads fit model.
     print(paste("Loading model..."))
@@ -187,16 +199,20 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     pres_abs_focal3 <- as.data.frame(pres_abs_focal3)
     pres_abs_test <- as.data.frame(pres_abs_test)
 
-    ens_pred <- predict(spp_sdm,newdata=pres_abs_focal3,type="response")
+    ens_pred1 <- dismo::predict(spp_sdm@models$TR_PRES$gbmstep3$`1`@object,x=pres_abs_focal3,type="response",
+                                n.trees=spp_sdm@models$TR_PRES$gbmstep3$`1`@object$gbm.call$best.trees)
+    ens_pred2 <- kernlab::predict(spp_sdm@models$TR_PRES$svm$`2`@object,newdata=pres_abs_focal3,type="response")
+    ens_pred3 <- dismo::predict(spp_sdm@models$TR_PRES$maxent$`3`@object,x=pres_abs_focal3,type="response")
+    apply(cbind(ens_pred1,ens_pred2,ens_pred3),MARGIN=1,FUN=wfun)
     pres_abs_focal3$Ens_pred <- apply(ens_pred,FUN=wfun,MARGIN = 1)
-    pres_abs_focal3$Ens_pred[pres_abs_focal3$Ens_pred <= 1e-7] <- 1e-7
-    pres_abs_focal3$Ens_pred[pres_abs_focal3$Ens_pred > (1 - 1e-7)] <- (1 - 1e-7)
+    pres_abs_focal3$Ens_pred[pres_abs_focal3$Ens_pred <= 1e-4] <- 1e-4
+    pres_abs_focal3$Ens_pred[pres_abs_focal3$Ens_pred > (1 - 1e-4)] <- (1 - 1e-4)
     pres_abs_focal3$pred_logit <- logit(pres_abs_focal3$Ens_pred)
     
     ens_pred_test <- predict(spp_sdm,newdata=pres_abs_test,type="response")
     pres_abs_test$Ens_pred <- apply(ens_pred_test,FUN=wfun,MARGIN = 1)
-    pres_abs_test$Ens_pred[pres_abs_test$Ens_pred <= 1e-7] <- 1e-7
-    pres_abs_test$Ens_pred[pres_abs_test$Ens_pred > (1 - 1e-7)] <- (1 - 1e-7)
+    pres_abs_test$Ens_pred[pres_abs_test$Ens_pred <= 1e-4] <- 1e-4
+    pres_abs_test$Ens_pred[pres_abs_test$Ens_pred > (1 - 1e-4)] <- (1 - 1e-4)
     pres_abs_test$pred_logit <- logit(pres_abs_test$Ens_pred)
     
     ##Measures baseline performance of model on independent data.
@@ -211,8 +227,8 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     spp_data <- spp_data[complete.cases(spp_data[,3:35]),]
     pred_all <- predict(model[[1]]$final_models,newdata=spp_data)
     pred_weighted <- apply(pred_all,FUN=wfun,MARGIN = 1)
-    pred_weighted[pred_weighted <= 1e-7] <- 1e-7
-    pred_weighted[pred_weighted >= (1 - 1e-7)] <- (1 - 1e-7)
+    pred_weighted[pred_weighted <= 1e-4] <- 1e-4
+    pred_weighted[pred_weighted >= (1 - 1e-4)] <- (1 - 1e-4)
     
     
     pred_logit <- logit(pred_weighted)
@@ -223,12 +239,12 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     ##Fits the kriging model for geographic correction.
     print(paste("Kriging with presence-background data..."))
 
-    corr_gam <- gam(TR_PRES~s(pred_logit,k=7)+s(PCO_XSC,PCO_YSC,bs="gp"),data=corr_data,
+    corr_gam <- gam(TR_PRES~s(pred_logit,k=14)+s(PCO_XSC,PCO_YSC,bs="gp"),data=corr_data,
                     family=binomial(link = "logit"))
     
     ##Predicts for heldout data.
     Corr_pred <- predict(corr_gam,newdata=pres_abs_focal3)
-    #Corr_pred[Corr_pred < -10] <- -10
+    Corr_pred[Corr_pred < -10] <- -10
     Corr_pred_prob <- inv_logit(Corr_pred)
     pres_abs_corr_eval <- evaluate(p=as.numeric(Corr_pred_prob[pres_abs_focal3$PRES==1]),
                                    a=as.numeric(Corr_pred_prob[pres_abs_focal3$PRES==0]))
@@ -241,7 +257,7 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
       corr_gam_test <- as.list(rep(NA,length(ks)))
       new_AUC <- rep(NA,length(ks))
       for(j in 1:length(ks)){
-        corr_gam_test[[j]] <- try(gam(TR_PRES~s(pred_logit,k=7)+s(PCO_XSC,PCO_YSC,bs="gp",k=ks[j]),data=corr_data,
+        corr_gam_test[[j]] <- try(gam(TR_PRES~s(pred_logit,k=14)+s(PCO_XSC,PCO_YSC,bs="gp",k=ks[j]),data=corr_data,
                                   family=binomial(link = "logit")))
         Corr_pred_test <- predict(corr_gam_test[[j]],newdata=pres_abs_focal3)
         Corr_pred_test[Corr_pred_test < -10] <- -10
@@ -284,7 +300,7 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     
     if(pred_slope_glm0 > 0 & plot_slope_glm0 > 0){
       print(paste("Calibration slope > 0 plotsize slope > 0, Calibrating with plot size."))
-      calib_gam <- gam(PRES~s(Corr_pred,k=4)+plotareaha,data=pres_abs_focal3,
+      calib_gam <- gam(PRES~s(Corr_pred,k=5)+plotareaha,data=pres_abs_focal3,
                        family=binomial(link = "logit"))
       ##Predicts calibrated values at pres-abs points
       pres_abs_focal3$Calib_pred <- predict(calib_gam,newdata=pres_abs_focal3,
@@ -296,7 +312,7 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
       calib_type <- "gam_plotsize"
     }else if(pred_slope_glm0 > 0){
       print(paste("Plot Area slope < 0, Calibrating without plot size."))
-      calib_gam <- gam(PRES~s(Corr_pred,k=4),data=pres_abs_focal3,
+      calib_gam <- gam(PRES~s(Corr_pred,k=5),data=pres_abs_focal3,
                        family=binomial(link = "logit"))
       ##Predicts calibrated values at pres-abs points
       pres_abs_focal3$Calib_pred <- predict(calib_gam,newdata=pres_abs_focal3,
@@ -331,11 +347,11 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
                      calib_model=calib_gam,
                      test_data=pres_abs_test)
     
-    #library(ggplot2)
-    #ggplot(out_list$test_data)+
-    #  geom_point(aes(x=x,y=y,color=(Ens_pred)))+
-    #  scale_color_distiller(type="div")+
-    #  theme_bw()
+    library(ggplot2)
+    ggplot(out_list$test_data)+
+     geom_point(aes(x=x,y=y,color=Calib_pred))+
+     scale_color_distiller(type="div",limits=c(0,0.5))+
+     theme_bw()
     
     ##Writes output to disk.
     out_name <- gsub(".Rdata","_calib.Rdata",model_file,fixed=TRUE)

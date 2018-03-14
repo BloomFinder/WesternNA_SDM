@@ -7,12 +7,13 @@ library(doParallel)
 library(gdalUtils)
 library(doRNG)
 library(raster)
-devtools::install_github("wrathematics/openblasctl")
-library(openblasctl)
+#devtools::install_github("wrathematics/openblasctl")
+#library(openblasctl)
 
-proj_dir <- "/home/rstudio/WesternNA_SDM"
-aws_path <- "/home/rstudio/.local/bin/"
-#aws_path <- "/Users/ian/miniconda2/bin/"
+#proj_dir <- "/home/rstudio/WesternNA_SDM"
+proj_dir <- "/Users/ian/code/WesternNA_SDM"
+#aws_path <- "/home/rstudio/.local/bin/"
+aws_path <- "/Users/ian/miniconda2/bin/"
 setwd(proj_dir)
 
 #mnames <- names(sdm::getmethodNames())
@@ -42,7 +43,7 @@ setwd(proj_dir)
 # }
 
 ##Downloads point data from Amazon S3 if it doesn't already exist.
-if(!file.exists("./data/occurences_final_3_1_2018.tar.gz")){
+if(!file.exists("./data/occurences_final_3_1_2018.csv")){
   aws_dl3 <- paste(aws_path,"aws s3 cp s3://sdmdata/occurences/occurences_final_3_1_2018.tar.gz ./data/occurences_final_3_1_2018.tar.gz",sep="")
   system(paste("cd",proj_dir,"&&",aws_dl3),wait=TRUE)
   tar_dl3 <- "tar -xf ./data/occurences_final_3_1_2018.tar.gz -C ./data/"
@@ -50,7 +51,7 @@ if(!file.exists("./data/occurences_final_3_1_2018.tar.gz")){
 }
 
 ##Downloads glacier random point data from Amazon S3 if it doesn't already exist.
-if(!file.exists("./data/Randolph_glacier_random_points_attrib.tar.gz")){
+if(!file.exists("./data/Randolph_glacier_random_points_attrib.csv")){
   aws_dl4 <- paste(aws_path,"aws s3 cp s3://sdmdata/occurences/Randolph_glacier_random_points_attrib.tar.gz ./data/Randolph_glacier_random_points_attrib.tar.gz",sep="")
   system(paste("cd",proj_dir,"&&",aws_dl4),wait=TRUE)
   tar_dl4 <- "tar -xf ./data/Randolph_glacier_random_points_attrib.tar.gz -C ./data/"
@@ -65,21 +66,21 @@ glac <- glac[complete.cases(glac),]
 ##Species list for analysis
 test_spp <- unique(spd$species)
 #test_spp <- sample(unique(spd$species),size=50,replace=FALSE)
-# test_spp <- c("Aquilegia formosa",
-#                "Ranunculus adoneus",
-#                "Mimulus guttatus",
-#                "Vicia americana",
-#                "Chamerion angustifolium",
-#                "Maianthemum stellatum",
-#                "Phacelia heterophylla",
-#                "Sedum stenopetalum",
-#                "Ipomopsis aggregata",
-#                "Claytonia lanceolata",
-#                "Rudbeckia occidentalis",
-#                "Veratrum californicum",
-#                "Agoseris aurantiaca",
-#                "Sedum lanceolatum",
-#                "Xerophyllum tenax")
+test_spp <- c("Aquilegia formosa",
+               "Ranunculus adoneus",
+               "Mimulus guttatus",
+               "Vicia americana",
+               "Chamerion angustifolium",
+               "Maianthemum stellatum",
+               "Phacelia heterophylla",
+               "Sedum stenopetalum",
+               "Ipomopsis aggregata",
+               "Claytonia lanceolata",
+               "Rudbeckia occidentalis",
+               "Veratrum californicum",
+               "Agoseris aurantiaca",
+               "Sedum lanceolatum",
+               "Xerophyllum tenax")
 
 ## Model fitting for focal species.
 set.seed(38)
@@ -106,7 +107,7 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","openblasctl"),
                        }
                        
                        ##Prevents multithreaded linear algebra library from parallelizing.
-                       openblas_set_num_threads(1)
+                       #openblas_set_num_threads(1)
                        
                        ##Checks if model file already exists on AWS.
                        fit_file <- paste(proj_dir,"/scratch/models/sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
@@ -171,24 +172,43 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","openblasctl"),
                                             train=train_data,test=test_data)
                          print(tr_sdmd)
                          
-                         ##Fits the models with heldout data to measure performance.
+                         ##Fits the models with heldout data to optimize parameters and measure performance.
                          print(paste("Initial fitting..."))
                          
+                         svm_params <- expand.grid(C=c(1,5,10,20,30,50,100))
+                         tr_sdm_AUC <- rep(NA,nrow(svm_params))
+                         
+                         opt_sdmd <-  sdmData(TR_PRES ~ . + f(PCT_EFW) + f(PCT_ECO) + f(PSL_TUS) + f(PSL_TWL),
+                                                        train=sample_frac(train_data,size=0.2),test=test_data)
+                         
+                         print(paste("Optimizing SVM hyperparameters..."))
+                         
+                         for(j in 1:nrow(svm_params)){
+                           tr_sdm_a <- sdm(TR_PRES ~ PLC_TRE + PLC_HRB + PCM_CMD + PCM_TD + PCM_PAS + PCM_DD5 + PCM_MAP + PSL_BDR + PSL_SND + PSL_CAR + PSL_PHO + PCL_SE1 + PCL_SE2 + PCL_MRA + PSW_DIS + PTP_RLV + PTP_WET,
+                                         data=opt_sdmd,methods=c("svm4"),
+                                         var.selection=FALSE,modelSettings=list(
+                                         svm4=list(C=svm_params$C[j],
+                                                   kpar="automatic")))
+                           tr_sdm_AUC[j] <- tr_sdm_a@models$TR_PRES$svm4$'1'@evaluation$test.indep@statistics$AUC
+                           print(paste("Test AUC",tr_sdm_AUC[j],"for C=",svm_params$C[j]))
+                         }
+                         best_svm_pars <- svm_params[which.max(tr_sdm_AUC),]
+                         
                          tr_sdm1 <- sdm(TR_PRES ~ PLC_TRE + PLC_HRB + PCM_CMD + PCM_TD + PCM_PAS + PCM_DD5 + PCM_MAP + PSL_BDR + PSL_SND + PSL_CAR + PSL_PHO + PCL_SE1 + PCL_SE2 + PCL_MRA + PSW_DIS + PTP_RLV + PTP_WET,
-                                        data=tr_sdmd,methods=c("gbmstep3","svm","maxent"),
+                                        data=tr_sdmd,methods=c("gbmstep3","svm4","maxent"),
                                         var.selection=FALSE,modelSettings=list(gbmstep3=list(learning.rate=0.01,
                                                                                               n.trees=200,
-                                                                                              n.cores=1)),
+                                                                                              n.cores=1),
                                                                                maxent=list(beta=2),
-                                                                               svm=list(epsilon=0.1))
-                         
+                                                                               svm4=list(C=best_svm_pars,
+                                                                                         kpar='automatic')))
                          print(tr_sdm1)
                          
                          ##Extracts test data performance stats from fit models.
                          gbm_stats1 <- tr_sdm1@models$TR_PRES$gbmstep3$'1'@evaluation$test.indep@threshold_based
                          gbm_stats2 <- tr_sdm1@models$TR_PRES$gbmstep3$'1'@evaluation$test.indep@statistics
-                         svm_stats1 <- tr_sdm1@models$TR_PRES$svm$'2'@evaluation$test.indep@threshold_based
-                         svm_stats2 <- tr_sdm1@models$TR_PRES$svm$'2'@evaluation$test.indep@statistics
+                         svm_stats1 <- tr_sdm1@models$TR_PRES$svm4$'2'@evaluation$test.indep@threshold_based
+                         svm_stats2 <- tr_sdm1@models$TR_PRES$svm4$'2'@evaluation$test.indep@statistics
                          mxt_stats1 <- tr_sdm1@models$TR_PRES$maxent$'3'@evaluation$test.indep@threshold_based
                          mxt_stats2 <- tr_sdm1@models$TR_PRES$maxent$'3'@evaluation$test.indep@statistics
                          tr_sdm_stats <- data.frame(rbind(c(gbm_stats1,gbm_stats2),
@@ -197,18 +217,21 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","openblasctl"),
                          tr_sdm_stats$species <- test_spp[i]
                          tr_sdm_stats$method <- c("gbmstep3","svm","maxent")
                          tr_sdm_stats$ensemble_weight <- (as.numeric(tr_sdm_stats$AUC)-0.5)/0.5
+                         tr_sdm_stats$ensemble_weight[tr_sdm_stats$ensemble_weight < 0] <- 0
                          
                          ##Re-fits models with the full dataset.
                          print(paste("Final fitting..."))
                          tr_sdmd2 <- sdmData(TR_PRES ~ . + f(PCT_EFW) + f(PCT_ECO) + f(PSL_TUS) + f(PSL_TWL),
                                              train=all_data)
+                         
                          sdm_all <- sdm(TR_PRES ~ PLC_TRE + PLC_HRB + PCM_CMD + PCM_TD + PCM_PAS + PCM_DD5 + PCM_MAP + PSL_BDR + PSL_SND + PSL_CAR + PSL_PHO + PCL_SE1 + PCL_SE2 + PCL_MRA + PSW_DIS + PTP_RLV + PTP_WET,
-                                        data=tr_sdmd2,methods=c("gbmstep3","svm","maxent"),
+                                        data=tr_sdmd2,methods=c("gbmstep3","svm4","maxent"),
                                         var.selection=FALSE,modelSettings=list(gbmstep3=list(learning.rate=0.01,
-                                                                                             n.trees=200,
-                                                                                             n.cores=1)),
-                                                                              maxent=list(beta=2),
-                                                                              svm=list(epsilon=0.1))
+                                                                                              n.trees=200,
+                                                                                              n.cores=1),
+                                                                               maxent=list(beta=2),
+                                                                               svm4=list(C=best_svm_pars,
+                                                                                         kpar='automatic')))
                          print(sdm_all)
                          out <- list(list(data=all_data,final_models=sdm_all,stats=tr_sdm_stats))
                          names(out) <- test_spp[i]
