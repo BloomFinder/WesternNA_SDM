@@ -65,21 +65,21 @@ glac <- glac[complete.cases(glac),]
 ##Species list for analysis
 test_spp <- unique(spd$species)
 #test_spp <- sample(unique(spd$species),size=50,replace=FALSE)
-test_spp <- c("Aquilegia formosa",
-               "Ranunculus adoneus",
-               "Mimulus guttatus",
-               "Vicia americana",
-               "Chamerion angustifolium",
-               "Maianthemum stellatum",
-               "Phacelia heterophylla",
-               "Sedum stenopetalum",
-               "Ipomopsis aggregata",
-               "Claytonia lanceolata",
-               "Rudbeckia occidentalis",
-               "Veratrum californicum",
-               "Agoseris aurantiaca",
-               "Sedum lanceolatum",
-               "Xerophyllum tenax")
+# test_spp <- c("Aquilegia formosa",
+#                "Ranunculus adoneus",
+#                "Mimulus guttatus",
+#                "Vicia americana",
+#                "Chamerion angustifolium",
+#                "Maianthemum stellatum",
+#                "Phacelia heterophylla",
+#                "Sedum stenopetalum",
+#                "Ipomopsis aggregata",
+#                "Claytonia lanceolata",
+#                "Rudbeckia occidentalis",
+#                "Veratrum californicum",
+#                "Agoseris aurantiaca",
+#                "Sedum lanceolatum",
+#                "Xerophyllum tenax")
 
 ## Model fitting for focal species.
 set.seed(38)
@@ -180,7 +180,7 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","openblasctl"),
                                                                                               n.trees=200,
                                                                                               n.cores=1)),
                                                                                maxent=list(beta=2),
-                                                                               svm=list(epsilon=10))
+                                                                               svm=list(epsilon=0.1))
                          
                          print(tr_sdm1)
                          
@@ -208,7 +208,7 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","openblasctl"),
                                                                                              n.trees=200,
                                                                                              n.cores=1)),
                                                                               maxent=list(beta=2),
-                                                                              svm=list(epsilon=10))
+                                                                              svm=list(epsilon=0.1))
                          print(sdm_all)
                          out <- list(list(data=all_data,final_models=sdm_all,stats=tr_sdm_stats))
                          names(out) <- test_spp[i]
@@ -216,7 +216,8 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","openblasctl"),
                          
                          
                          cat(paste("Model object written to",fit_file,"on",
-                                   Sys.time(),"\n"),file="./scratch/sdm_progress.log",
+                                   Sys.time(),"AUC:",paste(tr_sdm_stats$method, tr_sdm_stats$AUC,collapse=" "),"\n"),
+                             file="./scratch/sdm_progress.log",
                              append=TRUE)
                          
                          
