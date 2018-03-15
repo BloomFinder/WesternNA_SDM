@@ -64,8 +64,6 @@ pres_abs$Loc <- paste("W",round(pres_abs$x/200),"N",round(pres_abs$y/200),sep=""
 ##Computes SDM corrections and calibrations for each focal species.
 set.seed(37)
 
-#cl <- makeCluster(3,outfile="sdm_messages.log")
-#registerDoParallel(cl)
 overwrite <- TRUE
 # 
 spp <- c("Agastache pallidiflora",
@@ -81,7 +79,7 @@ spp <- c("Agastache pallidiflora",
          "Agastache urticifolia",
          "Bistorta bistortoides",
          "Ceanothus velutinus",
-         "Conioselinum_scopulorum",
+         "Conioselinum scopulorum",
          "Balsamorhiza sagittata",
          "Erythronium montanum",
          "Amelanchier utahensis",
@@ -98,10 +96,14 @@ spp <- c("Agastache pallidiflora",
 #spp <- spp[1:7]
 
 ##PROBLEM: sdm predict() function fails when run in parallel with %dopar% or %dorng%
+cl <- makeCluster(3,outfile="sdm_messages.log")
+registerDoParallel(cl)
 
-cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
+cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %dorng% {
   setwd(proj_dir)
+  library(gbm)
   library(sdm)
+
   
   mnames <- names(sdm::getmethodNames())
   if(!("svm4" %in% mnames)){
@@ -199,18 +201,23 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     pres_abs_focal3 <- as.data.frame(pres_abs_focal3)
     pres_abs_test <- as.data.frame(pres_abs_test)
 
-    ens_pred1 <- dismo::predict(spp_sdm@models$TR_PRES$gbmstep3$`1`@object,x=pres_abs_focal3,type="response",
+    ens_pred1 <- predict.gbm(object=spp_sdm@models$TR_PRES$gbmstep3$`1`@object,newdata=pres_abs_focal3,type="response",
                                 n.trees=spp_sdm@models$TR_PRES$gbmstep3$`1`@object$gbm.call$best.trees)
-    ens_pred2 <- kernlab::predict(spp_sdm@models$TR_PRES$svm$`2`@object,newdata=pres_abs_focal3,type="response")
+    ens_pred2 <- kernlab::predict(spp_sdm@models$TR_PRES$svm4$`2`@object,newdata=pres_abs_focal3,type="probabilities")[,2]
     ens_pred3 <- dismo::predict(spp_sdm@models$TR_PRES$maxent$`3`@object,x=pres_abs_focal3,type="response")
-    apply(cbind(ens_pred1,ens_pred2,ens_pred3),MARGIN=1,FUN=wfun)
-    pres_abs_focal3$Ens_pred <- apply(ens_pred,FUN=wfun,MARGIN = 1)
+    ens_pred <- apply(cbind(ens_pred1,ens_pred2,ens_pred3),MARGIN=1,FUN=wfun)
+    pres_abs_focal3$Ens_pred <- ens_pred
     pres_abs_focal3$Ens_pred[pres_abs_focal3$Ens_pred <= 1e-4] <- 1e-4
     pres_abs_focal3$Ens_pred[pres_abs_focal3$Ens_pred > (1 - 1e-4)] <- (1 - 1e-4)
     pres_abs_focal3$pred_logit <- logit(pres_abs_focal3$Ens_pred)
     
-    ens_pred_test <- predict(spp_sdm,newdata=pres_abs_test,type="response")
-    pres_abs_test$Ens_pred <- apply(ens_pred_test,FUN=wfun,MARGIN = 1)
+    ens_predt1 <- predict.gbm(object=spp_sdm@models$TR_PRES$gbmstep3$`1`@object,newdata=pres_abs_test,type="response",
+                             n.trees=spp_sdm@models$TR_PRES$gbmstep3$`1`@object$gbm.call$best.trees)
+    ens_predt2 <- kernlab::predict(spp_sdm@models$TR_PRES$svm4$`2`@object,newdata=pres_abs_test,type="probabilities")[,2]
+    ens_predt3 <- dismo::predict(spp_sdm@models$TR_PRES$maxent$`3`@object,x=pres_abs_test,type="response")
+    ens_pred_test <- apply(cbind(ens_predt1,ens_predt2,ens_predt3),MARGIN=1,FUN=wfun)
+    
+    pres_abs_test$Ens_pred <- ens_pred_test
     pres_abs_test$Ens_pred[pres_abs_test$Ens_pred <= 1e-4] <- 1e-4
     pres_abs_test$Ens_pred[pres_abs_test$Ens_pred > (1 - 1e-4)] <- (1 - 1e-4)
     pres_abs_test$pred_logit <- logit(pres_abs_test$Ens_pred)
@@ -225,8 +232,14 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     print(paste("Prepping presence-background data..."))
     spp_data <- model[[1]]$data
     spp_data <- spp_data[complete.cases(spp_data[,3:35]),]
-    pred_all <- predict(model[[1]]$final_models,newdata=spp_data)
-    pred_weighted <- apply(pred_all,FUN=wfun,MARGIN = 1)
+    
+    pred_a1 <- predict.gbm(object=spp_sdm@models$TR_PRES$gbmstep3$`1`@object,newdata=spp_data,type="response",
+                              n.trees=spp_sdm@models$TR_PRES$gbmstep3$`1`@object$gbm.call$best.trees)
+    pred_a2 <- kernlab::predict(spp_sdm@models$TR_PRES$svm4$`2`@object,newdata=spp_data,type="probabilities")[,2]
+    pred_a3 <- dismo::predict(spp_sdm@models$TR_PRES$maxent$`3`@object,x=spp_data,type="response")
+    
+    
+    pred_weighted <- apply(cbind(pred_a1,pred_a2,pred_a3), FUN=wfun,MARGIN = 1)
     pred_weighted[pred_weighted <= 1e-4] <- 1e-4
     pred_weighted[pred_weighted >= (1 - 1e-4)] <- (1 - 1e-4)
     
@@ -349,8 +362,8 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     
     library(ggplot2)
     ggplot(out_list$test_data)+
-     geom_point(aes(x=x,y=y,color=Calib_pred))+
-     scale_color_distiller(type="div",limits=c(0,0.5))+
+     geom_point(aes(x=x,y=y,color=(Corr_pred_prob - Ens_pred)))+
+     scale_color_distiller(type="div",limits=c(-1,1))+
      theme_bw()
     
     ##Writes output to disk.
@@ -359,15 +372,15 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
     saveRDS(out_list,file=out_path)
     
     ##Uploads to S3
-    #upl_string <- paste(aws_path,"aws s3 cp ",out_path," ",paste("s3://sdmdata/models_calibrated/",out_name,sep=""),sep="")
-    #system(upl_string,wait=TRUE)
+    upl_string <- paste(aws_path,"aws s3 cp ",out_path," ",paste("s3://sdmdata/models_calibrated/",out_name,sep=""),sep="")
+    system(upl_string,wait=TRUE)
     
     ##Removes local files.
-    #model_path <- paste(proj_dir,model_dir,model_file,sep="")
-    #rm_string1 <- paste("rm",model_path)
-    #rm_string2 <- paste("rm",out_path)
-    #system(rm_string1,wait=TRUE)
-    #system(rm_string2,wait=TRUE)
+    model_path <- paste(proj_dir,model_dir,model_file,sep="")
+    rm_string1 <- paste("rm",model_path)
+    rm_string2 <- paste("rm",out_path)
+    system(rm_string1,wait=TRUE)
+    system(rm_string2,wait=TRUE)
 
     ##Logs completion
     cat(paste("Calibration fit complete for ",spp[i],"(",i,"of",length(spp),") on",
@@ -446,4 +459,4 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %do% {
   }
   (out_list)
 }
-#stopCluster(cl)
+stopCluster(cl)
