@@ -4,20 +4,24 @@ library(dplyr)
 library(mgcv)
 library(foreach)
 library(doParallel)
+install.packages("doRNG")
 library(doRNG)
 library(raster)
 library(sdm)
 library(dismo)
-##library(openblasctl)
+library(openblasctl)
 
-proj_dir <- "~/code/WesternNA_SDM/"
+#proj_dir <- "~/code/WesternNA_SDM/"
+proj_dir <- "/home/rstudio/WesternNA_SDM/"
 model_dir <- "scratch/models/"
 out_dir <- "scratch/models_calib/"
 raw_pred_path <- "output/WNA_mosaic/"
 calib_pred_path <- "output/WNA_mosaic_calib/"
 rast_pred_path <- "~/GIS/"
-gdal_path <- "/Library/Frameworks/GDAL.framework/Programs/"
-aws_path <- "~/miniconda2/bin/"
+#gdal_path <- "/Library/Frameworks/GDAL.framework/Programs/"
+gdal_path <- "/usr/bin/"
+#aws_path <- "~/miniconda2/bin/"
+aws_path <- "/home/rstudio/.local/bin/"
 setwd(proj_dir)
 
 ##Adds custom svm function to sdm package.
@@ -66,37 +70,37 @@ set.seed(37)
 
 overwrite <- TRUE
 # 
-spp <- c("Agastache pallidiflora",
-         "Campanula scabrella",
-         "Asclepias tuberosa",
-         "Agrimonia striata",
-         "Ageratina_herbacea",
-         "Calochortus gunnisonii",
-         "Anemone multifida",
-         "Cassiope mertensiana",
-         "Arnica latifolia",
-         "Aconitum columbianum",
-         "Agastache urticifolia",
-         "Bistorta bistortoides",
-         "Ceanothus velutinus",
-         "Conioselinum scopulorum",
-         "Balsamorhiza sagittata",
-         "Erythronium montanum",
-         "Amelanchier utahensis",
-         "Ligusticum porteri",
-         "Lilium columbianum",
-         "Oplopanax horridus",
-         "Oreostemma alpigenum",
-         "Maianthemum racemosum",
-         "Pedicularis contorta",
-         "Pedicularis attollens",
-         "Silene douglasii",
-         "Rosa woodsii",
-         "Xerophyllum tenax")
+# spp <- c("Agastache pallidiflora",
+#          "Campanula scabrella",
+#          "Asclepias tuberosa",
+#          "Agrimonia striata",
+#          "Ageratina_herbacea",
+#          "Calochortus gunnisonii",
+#          "Anemone multifida",
+#          "Cassiope mertensiana",
+#          "Arnica latifolia",
+#          "Aconitum columbianum",
+#          "Agastache urticifolia",
+#          "Bistorta bistortoides",
+#          "Ceanothus velutinus",
+#          "Conioselinum scopulorum",
+#          "Balsamorhiza sagittata",
+#          "Erythronium montanum",
+#          "Amelanchier utahensis",
+#          "Ligusticum porteri",
+#          "Lilium columbianum",
+#          "Oplopanax horridus",
+#          "Oreostemma alpigenum",
+#          "Maianthemum racemosum",
+#          "Pedicularis contorta",
+#          "Pedicularis attollens",
+#          "Silene douglasii",
+#          "Rosa woodsii",
+#          "Xerophyllum tenax")
 #spp <- spp[1:7]
 
 ##PROBLEM: sdm predict() function fails when run in parallel with %dopar% or %dorng%
-cl <- makeCluster(3,outfile="sdm_messages.log")
+cl <- makeCluster(95,outfile="sdm_messages.log")
 registerDoParallel(cl)
 
 cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %dorng% {
@@ -360,11 +364,11 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %dorng% {
                      calib_model=calib_gam,
                      test_data=pres_abs_test)
     
-    library(ggplot2)
-    ggplot(out_list$test_data)+
-     geom_point(aes(x=x,y=y,color=(Corr_pred_prob - Ens_pred)))+
-     scale_color_distiller(type="div",limits=c(-1,1))+
-     theme_bw()
+    # library(ggplot2)
+    # ggplot(out_list$test_data)+
+    #  geom_point(aes(x=x,y=y,color=(Corr_pred_prob - Ens_pred)))+
+    #  scale_color_distiller(type="div",limits=c(-1,1))+
+    #  theme_bw()
     
     ##Writes output to disk.
     out_name <- gsub(".Rdata","_calib.Rdata",model_file,fixed=TRUE)
