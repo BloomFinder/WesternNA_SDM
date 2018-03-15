@@ -219,7 +219,7 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl
     gdala_call <- paste(gdal_path,"gdaladdo -r average ",warpname," 2 4 8 16 32",
                         sep="")
     system(gdala_call,wait=TRUE)
-    gdalt_call <- paste(gdal_path,"gdal_translate ",warpname," ",cogname, " -ot UInt16 -co TILED=YES -co COPY_SRC_OVERVIEWS=YES -co COMPRESS=DEFLATE -co BLOCKXSIZE=512 -co BLOCKYSIZE=512 --config GDAL_TIFF_OVR_BLOCKSIZE 512",
+    gdalt_call <- paste(gdal_path,"gdal_translate ",warpname," ",cogname, " -ot Int16 -co TILED=YES -co COPY_SRC_OVERVIEWS=YES -co COMPRESS=DEFLATE -co BLOCKXSIZE=512 -co BLOCKYSIZE=512 --config GDAL_TIFF_OVR_BLOCKSIZE 512",
                         sep="")
     system(gdalt_call,wait=TRUE)
     
