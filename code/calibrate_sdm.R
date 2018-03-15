@@ -126,7 +126,7 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %dorng% {
   wfun <- function(x){weighted.mean(x,w=spp_weights)}
   
   ##Prevents multithreaded linear algebra library from implicitly parallelizing.
-  #openblas_set_num_threads(1)
+  openblas_set_num_threads(1)
   
   ##Checks to see if file already exists on S3
   fit_file <- paste("sdm_",gsub(" ","_",spp[i]),"_calib.Rdata",sep="")
