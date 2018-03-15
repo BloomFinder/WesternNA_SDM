@@ -93,7 +93,7 @@ cl <- makeCluster(95)
 registerDoParallel(cl)
 
 ##Raster predictions.
-foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl")) %:% {
+foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl")) %dopar% {
   
   openblas_set_num_threads(1)
   
