@@ -70,40 +70,14 @@ set.seed(37)
 
 overwrite <- TRUE
 # 
-# spp <- c("Agastache pallidiflora",
-#          "Campanula scabrella",
-#          "Asclepias tuberosa",
-#          "Agrimonia striata",
-#          "Ageratina_herbacea",
-#          "Calochortus gunnisonii",
-#          "Anemone multifida",
-#          "Cassiope mertensiana",
-#          "Arnica latifolia",
-#          "Aconitum columbianum",
-#          "Agastache urticifolia",
-#          "Bistorta bistortoides",
-#          "Ceanothus velutinus",
-#          "Conioselinum scopulorum",
-#          "Balsamorhiza sagittata",
-#          "Erythronium montanum",
-#          "Amelanchier utahensis",
-#          "Ligusticum porteri",
-#          "Lilium columbianum",
-#          "Oplopanax horridus",
-#          "Oreostemma alpigenum",
-#          "Maianthemum racemosum",
-#          "Pedicularis contorta",
-#          "Pedicularis attollens",
-#          "Silene douglasii",
-#          "Rosa woodsii",
-#          "Xerophyllum tenax")
+spp <- c("Arnica nevadensis","Calochortus coeruleus")
 #spp <- spp[1:7]
 
 ##PROBLEM: sdm predict() function fails when run in parallel with %dopar% or %dorng%
-cl <- makeCluster(95,outfile="sdm_messages.log")
+cl <- makeCluster(95)
 registerDoParallel(cl)
 
-cals <- foreach(i=1:length(spp),.packages=c("dplyr")) %dorng% {
+cals <- foreach(i=1:length(spp),.packages=c("dplyr","openblasctl")) %dorng% {
   setwd(proj_dir)
   library(gbm)
   library(sdm)
