@@ -5,15 +5,16 @@ library(dplyr)
 library(foreach)
 library(doParallel)
 library(gdalUtils)
+install.packages("doRNG")
 library(doRNG)
 library(raster)
-#devtools::install_github("wrathematics/openblasctl")
-#library(openblasctl)
+devtools::install_github("wrathematics/openblasctl")
+library(openblasctl)
 
-#proj_dir <- "/home/rstudio/WesternNA_SDM"
-proj_dir <- "/Users/ian/code/WesternNA_SDM"
-#aws_path <- "/home/rstudio/.local/bin/"
-aws_path <- "/Users/ian/miniconda2/bin/"
+proj_dir <- "/home/rstudio/WesternNA_SDM"
+#proj_dir <- "/Users/ian/code/WesternNA_SDM"
+aws_path <- "/home/rstudio/.local/bin/"
+#aws_path <- "/Users/ian/miniconda2/bin/"
 setwd(proj_dir)
 
 #mnames <- names(sdm::getmethodNames())
@@ -66,21 +67,21 @@ glac <- glac[complete.cases(glac),]
 ##Species list for analysis
 test_spp <- unique(spd$species)
 #test_spp <- sample(unique(spd$species),size=50,replace=FALSE)
-test_spp <- c("Aquilegia formosa",
-               "Ranunculus adoneus",
-               "Mimulus guttatus",
-               "Vicia americana",
-               "Chamerion angustifolium",
-               "Maianthemum stellatum",
-               "Phacelia heterophylla",
-               "Sedum stenopetalum",
-               "Ipomopsis aggregata",
-               "Claytonia lanceolata",
-               "Rudbeckia occidentalis",
-               "Veratrum californicum",
-               "Agoseris aurantiaca",
-               "Sedum lanceolatum",
-               "Xerophyllum tenax")
+# test_spp <- c("Aquilegia formosa",
+#                "Ranunculus adoneus",
+#                "Mimulus guttatus",
+#                "Vicia americana",
+#                "Chamerion angustifolium",
+#                "Maianthemum stellatum",
+#                "Phacelia heterophylla",
+#                "Sedum stenopetalum",
+#                "Ipomopsis aggregata",
+#                "Claytonia lanceolata",
+#                "Rudbeckia occidentalis",
+#                "Veratrum californicum",
+#                "Agoseris aurantiaca",
+#                "Sedum lanceolatum",
+#                "Xerophyllum tenax")
 
 ## Model fitting for focal species.
 set.seed(38)
@@ -94,7 +95,7 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","openblasctl"),
                        
                        setwd(proj_dir)
                        library(sdm)
-                       #library(openblasctl)
+                       library(openblasctl)
                        
                        mnames <- names(sdm::getmethodNames())
                        if(!("svm4" %in% mnames)){
@@ -107,7 +108,7 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","openblasctl"),
                        }
                        
                        ##Prevents multithreaded linear algebra library from parallelizing.
-                       #openblas_set_num_threads(1)
+                       openblas_set_num_threads(1)
                        
                        ##Checks if model file already exists on AWS.
                        fit_file <- paste(proj_dir,"/scratch/models/sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
@@ -175,7 +176,7 @@ all_stats <- foreach(i=1:length(test_spp),.packages=c("dplyr","openblasctl"),
                          ##Fits the models with heldout data to optimize parameters and measure performance.
                          print(paste("Initial fitting..."))
                          
-                         svm_params <- expand.grid(C=c(1,5,10,20,30,50,100))
+                         svm_params <- expand.grid(C=c(0.1,1,5,10,20,30,50,100))
                          tr_sdm_AUC <- rep(NA,nrow(svm_params))
                          
                          opt_sdmd <-  sdmData(TR_PRES ~ . + f(PCT_EFW) + f(PCT_ECO) + f(PSL_TUS) + f(PSL_TWL),
