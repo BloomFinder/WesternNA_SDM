@@ -86,7 +86,7 @@ pred_tiles <- list.files(tile_path, pattern=".tif$", full.names=TRUE)
 pred_names <- list.files(tile_path,pattern=".tif$", full.names=FALSE)
 
 model_files <- list.files(raw_model_path,pattern=".Rdata",full.names=TRUE)
-overwrite=TRUE
+overwrite=FALSE
 
 ##Sets up cluster.
 cl <- makeCluster(95)
@@ -114,10 +114,10 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl
   wfun <- function(x){weighted.mean(x,w=spp_weights)}
   
   ##Checks to see if the mosaic already exists on Amazon S3.
-  mos_exists_az <- system(paste(aws_path,"aws s3 ls s3://sdmdata/PNW_mosaic/",gsub(" ","_",test_spp[i]),"_mosaic.tif",sep=""),
+  mos_exists_az <- system(paste(aws_path,"aws s3 ls s3://bloomfindersdm/cog/",gsub(" ","_",test_spp[i]),"_calib_webmcog.tif",sep=""),
                           wait=TRUE)
   if(mos_exists_az==0 & overwrite==FALSE){
-    cat(paste("Raster predictions for",spp,"(",i,"of",length(test_spp),"already exist in S3, skipping...\n"),
+    cat(paste("Raster predictions for",test_spp[i],"(",i,"of",length(test_spp),"already exist in S3, skipping...\n"),
         file=log_path,append=TRUE)
     next
   }
