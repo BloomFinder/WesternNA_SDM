@@ -28,11 +28,11 @@ setwd(proj_dir)
 
 ####Creates spatial predictions using the weighted average of the models.####
 
-tile_path <- paste(proj_dir,"/data/SDM_tiles_PNW/",sep="")
+tile_path <- paste(proj_dir,"/data/SDM_tiles_WNA/",sep="")
 raw_model_path <-paste(proj_dir,"/scratch/models/",sep="")
 calib_model_path <-paste(proj_dir,"/scratch/models_calib/",sep="")
-out_path <- paste(proj_dir,"/output/PNW_tiles/",sep="")
-mosaic_path <- paste(proj_dir,"/output/PNW_mosaic_calib/",sep="")
+out_path <- paste(proj_dir,"/output/WNA_tiles/",sep="")
+mosaic_path <- paste(proj_dir,"/output/WNA_mosaic_calib/",sep="")
 log_path <- paste(proj_dir,"/scratch/sdm_progress.log",sep="")
 aws_path <- "/home/rstudio/.local/bin/"
 #aws_path <- "~/miniconda2/bin/"
@@ -64,23 +64,18 @@ if(!file.exists("./data/occurences_final_3_1_2018.csv")){
 }
 
 spd <- read_csv("./data/occurences_final_3_1_2018.csv")
-test_spp <- unique(spd$species)
+rm(spd)
+all_spp <- unique(spd$species)
 
-# test_spp <- c("Aquilegia formosa",
-#               "Ranunculus adoneus",
-#               "Mimulus guttatus",
-#               "Vicia americana",
-#               "Chamerion angustifolium",
-#               "Maianthemum stellatum",
-#               "Phacelia heterophylla",
-#               "Sedum stenopetalum",
-#               "Ipomopsis aggregata",
-#               "Claytonia lanceolata",
-#               "Rudbeckia occidentalis",
-#               "Veratrum californicum",
-#               "Agoseris aurantiaca",
-#               "Sedum lanceolatum",
-#               "Xerophyllum tenax")
+exclude_spp <-  c("Agastache urticifolia",    "Angelica arguta",          "Antennaria rosea",        
+                  "Castilleja miniata",       "Cistanthe umbellata",      "Erysimum capitatum",      
+                  "Ipomopsis aggregata",      "Mimulus guttatus",         "Parnassia fimbriata",     
+                  "Senecio integerrimus",     "Stellaria longipes",       "Symphyotrichum foliaceum",
+                  "Veronica serpyllifolia",   "Vicia americana",          "Viola macloskeyi",
+                  "Valeriana californica",    "Fallugia paradoxa",        "Castilleja austromontana",
+                  "Linaria vulgaris")
+
+test_spp <- all_spp[!(all_spp %in% exclude_spp)]
 
 pred_tiles <- list.files(tile_path, pattern=".tif$", full.names=TRUE)
 pred_names <- list.files(tile_path,pattern=".tif$", full.names=FALSE)
@@ -89,15 +84,16 @@ model_files <- list.files(raw_model_path,pattern=".Rdata",full.names=TRUE)
 overwrite=TRUE
 
 ##Sets up cluster.
-cl <- makeCluster(65)
+cl <- makeCluster(90)
 registerDoParallel(cl)
 
 ##Raster predictions.
-foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl")) %dopar% {
-
+foreach (i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl"),
+         .errorhandling='remove') %dopar% {
+  
   openblas_set_num_threads(1)
   
-  ##Adds custom svm function to sdm package.
+  ##Adds custom svm and gbm functions to sdm package.
   mnames <- names(sdm::getmethodNames())
   if(!("svm4" %in% mnames)){
     source(paste(proj_dir,"/code/svm4.R",sep=""))
@@ -150,9 +146,9 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl
     ##Creates output directory for each species if it doesn't exist.
     spp_dir <- paste(out_path,gsub(" ","_",spp),"/",sep="")
     if(!dir.exists(spp_dir)){dir.create(spp_dir)}
+      
+    for(j in 1:length(pred_tiles)) {
     
-    foreach(j=1:length(pred_tiles),.packages=c("raster","sdm","gdalUtils","openblasctl")) %dopar% {
-
       outfile <- paste(spp_dir,"sdm_tile_",j,
                        "_",gsub(" ","_",spp),".tif",sep="")
       if(file.exists(outfile) & overwrite==FALSE){
@@ -185,7 +181,6 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl
       #corr_pred[corr_pred < -10] <- -10
       #corr_pred_prob <- calc(corr_pred,fun=inv_logit,progress='text')
 
-      
       calib_brick <- brick(corr_pred,corr_pred)
       calib_brick[[2]] <- 0.04
       names(calib_brick) <- c("Corr_pred",names(calib_model$coefficients)[2])
@@ -196,6 +191,10 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl
       Calib_out <- calc(Calib_pred,fun=function(x){x*1000},datatype="INT2S", overwrite=TRUE,
                         filename=outfile)
     }
+    
+    ##Removes model files.
+    rm_string_mod <- paste("rm",paste(model_file,calib_model_file))
+    system(rm_string_mod)
       
     ##Merges output tiles to single raster.
     tiles <- list.files(spp_dir,pattern=".tif$")
@@ -204,9 +203,14 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl
     mosaic_rasters(gdalfile=tiles,dst_dataset=outname,
                    verbose=TRUE)
     
+    ##Removes tiles
+    all_tile_files <- list.files(spp_dir)
+    rm_string <- paste("rm",paste(paste(spp_dir,all_tile_files,sep=""),collapse=" "))
+    system(rm_string,wait=TRUE)
+    
     ##Copies raster mosaic to S3 bucket.
     cp_string <- paste(aws_path,"aws s3 cp ",outname,
-                       paste(" s3://sdmdata/PNW_mosaic/", gsub(" ","_",test_spp[i]), "_calib.tif",sep=""),sep="")
+                       paste(" s3://sdmdata/WNA_mosaic/", gsub(" ","_",test_spp[i]), "_calib.tif",sep=""),sep="")
     system(cp_string,wait=TRUE)
     
     ##Creates a cloud-optimized geotiff in web mercator projection.
@@ -225,22 +229,14 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl
     
     ##Copies web COG to S3
     cp_string <- paste(aws_path,"aws s3 cp ",cogname,
-                       paste(" s3://bloomfindersdm/cog/", gsub(" ","_",test_spp[i]), "_calib_webmcog.tif",sep=""),sep="")
+                       paste(" s3://bloomfindersdm/cog_wna/", gsub(" ","_",test_spp[i]), "_calib_webmcog.tif",sep=""),sep="")
     system(cp_string,wait=TRUE)
     
-    ##Removes tiles, mosaic, and model to save disk space.
-    all_tile_files <- list.files(spp_dir)
-    rm_string <- paste("rm",paste(paste(spp_dir,all_tile_files,sep=""),collapse=" "))
-    system(rm_string,wait=TRUE)
-    
+    ##Removes mosaic files.
     all_mos_files <- list.files(mosaic_path,pattern=gsub(" ","_",test_spp[i]))
     rm_mos_string <- paste("rm",paste(paste(mosaic_path,all_mos_files,sep=""),collapse=" "))
     system(rm_mos_string,wait=TRUE)
-
-    rm_string_mod <- paste("rm",paste(model_file,calib_model_file))
-    system(rm_string_mod)
     
     cat(paste("Raster predictions for",spp,"(",i,"of",length(test_spp),") completed on",
               Sys.time(),"\n"),file=log_path,append=TRUE)
 }
-stopCluster(cl)
