@@ -5,12 +5,13 @@ library(dplyr)
 library(foreach)
 library(doParallel)
 library(gdalUtils)
+install.packages("doRNG")
 library(doRNG)
 library(raster)
 #devtools::install_github("wrathematics/openblasctl")
 library(openblasctl)
 
-proj_dir <- "/Users/Ian/code/WesternNA_SDM"
+proj_dir <- "/home/rstudio/WesternNA_SDM"
 setwd(proj_dir)
 
 ##Adds custom svm and gbm functions to sdm package.
@@ -27,25 +28,35 @@ setwd(proj_dir)
 
 ####Creates spatial predictions using the weighted average of the models.####
 
-tile_path <- paste(proj_dir,"/data/SDM_tiles_PNW/",sep="")
+tile_path <- paste(proj_dir,"/data/SDM_tiles_WNA/",sep="")
 raw_model_path <-paste(proj_dir,"/scratch/models/",sep="")
 calib_model_path <-paste(proj_dir,"/scratch/models_calib/",sep="")
 out_path <- paste(proj_dir,"/output/WNA_tiles/",sep="")
 mosaic_path <- paste(proj_dir,"/output/WNA_mosaic_calib/",sep="")
 log_path <- paste(proj_dir,"/scratch/sdm_progress.log",sep="")
-aws_path <- "~/miniconda2/bin/"
-gdal_path <- "/Library/Frameworks/GDAL.framework/Programs/"
+aws_path <- "/home/rstudio/.local/bin/"
+#aws_path <- "~/miniconda2/bin/"
+gdal_path <- "/usr/bin/"
+#gdal_path <- "/Library/Frameworks/GDAL.framework/Programs/"
 
-# #Downloads full raster data from Amazon S3 if it doesn't already exist.
-# if(!file.exists("./data/SDM_tiles_WNA.tar.gz")){
-#   aws_dl2 <- "~/.local/bin/aws s3 cp s3://sdmdata/predictors/SDM_tiles_WNA.tar.gz ./data/SDM_tiles_WNA.tar.gz"
-#   system(paste("cd",proj_dir,"&&",aws_dl2),wait=TRUE)
-#   tar_dl2 <- "tar -xf ./data/SDM_tiles_WNA.tar.gz -C ./data/"
-#   system(paste("cd",proj_dir,"&&",tar_dl2),wait=TRUE)
-# }
+#Downloads full raster data from Amazon S3 if it doesn't already exist.
+if(!file.exists("./data/SDM_tiles_WNA.tar.gz")){
+  aws_dl2 <- "~/.local/bin/aws s3 cp s3://sdmdata/predictors/SDM_tiles_WNA.tar.gz ./data/SDM_tiles_WNA.tar.gz"
+  system(paste("cd",proj_dir,"&&",aws_dl2),wait=TRUE)
+  tar_dl2 <- "tar -xf ./data/SDM_tiles_WNA.tar.gz -C ./data/"
+  system(paste("cd",proj_dir,"&&",tar_dl2),wait=TRUE)
+}
+
+##Downloads test raster data from Amazon S3 if it doesn't already exist.
+if(!file.exists("./data/SDM_tiles_PNW.tar.gz")){
+  aws_dl1 <- paste(aws_path,"aws s3 cp s3://sdmdata/predictors/SDM_tiles_PNW.tar.gz ./data/SDM_tiles_PNW.tar.gz",sep="")
+  system(paste("cd",proj_dir,"&&",aws_dl1))
+  tar_dl1 <- "tar -xf ./data/SDM_tiles_PNW.tar.gz -C ./data/"
+  system(paste("cd",proj_dir,"&&",tar_dl1),wait=TRUE)
+}
 
 ##Downloads point data from Amazon S3 if it doesn't already exist.
-if(!file.exists("./data/occurences_final_3_1_2018.tar.gz")){
+if(!file.exists("./data/occurences_final_3_1_2018.csv")){
   aws_dl3 <- "~/.local/bin/aws s3 cp s3://sdmdata/occurences/occurences_final_3_1_2018.tar.gz ./data/occurences_final_3_1_2018.tar.gz"
   system(paste("cd",proj_dir,"&&",aws_dl3),wait=TRUE)
   tar_dl3 <- "tar -xf ./data/occurences_final_3_1_2018.tar.gz -C ./data/"
@@ -53,23 +64,18 @@ if(!file.exists("./data/occurences_final_3_1_2018.tar.gz")){
 }
 
 spd <- read_csv("./data/occurences_final_3_1_2018.csv")
-test_spp <- unique(spd$species)
+all_spp <- unique(spd$species)
 
-test_spp <- c("Aquilegia formosa",
-              "Ranunculus adoneus",
-              "Mimulus guttatus",
-              "Vicia americana",
-              "Chamerion angustifolium",
-              "Maianthemum stellatum",
-              "Phacelia heterophylla",
-              "Sedum stenopetalum",
-              "Ipomopsis aggregata",
-              "Claytonia lanceolata",
-              "Rudbeckia occidentalis",
-              "Veratrum californicum",
-              "Agoseris aurantiaca",
-              "Sedum lanceolatum",
-              "Xerophyllum tenax")
+exclude_spp <-  c("Agastache urticifolia",    "Angelica arguta",          "Antennaria rosea",        
+                  "Castilleja miniata",       "Cistanthe umbellata",      "Erysimum capitatum",      
+                  "Ipomopsis aggregata",      "Mimulus guttatus",         "Parnassia fimbriata",     
+                  "Senecio integerrimus",     "Stellaria longipes",       "Symphyotrichum foliaceum",
+                  "Veronica serpyllifolia",   "Vicia americana",          "Viola macloskeyi",
+                  "Valeriana californica",    "Fallugia paradoxa",        "Castilleja austromontana",
+                  "Linaria vulgaris")
+
+test_spp <- all_spp[!(all_spp %in% exclude_spp)]
+rm(spd)
 
 pred_tiles <- list.files(tile_path, pattern=".tif$", full.names=TRUE)
 pred_names <- list.files(tile_path,pattern=".tif$", full.names=FALSE)
@@ -78,15 +84,16 @@ model_files <- list.files(raw_model_path,pattern=".Rdata",full.names=TRUE)
 overwrite=TRUE
 
 ##Sets up cluster.
-cl <- makeCluster(3)
+cl <- makeCluster(90)
 registerDoParallel(cl)
 
 ##Raster predictions.
-foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils")) %:% {
+foreach (i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl"),
+         .errorhandling='remove') %dopar% {
   
-  #openblas_set_num_threads(1)
+  openblas_set_num_threads(1)
   
-  ##Adds custom svm function to sdm package.
+  ##Adds custom svm and gbm functions to sdm package.
   mnames <- names(sdm::getmethodNames())
   if(!("svm4" %in% mnames)){
     source(paste(proj_dir,"/code/svm4.R",sep=""))
@@ -103,22 +110,22 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils")) %:% {
   wfun <- function(x){weighted.mean(x,w=spp_weights)}
   
   ##Checks to see if the mosaic already exists on Amazon S3.
-  mos_exists_az <- system(paste(aws_path,"aws s3 ls s3://sdmdata/WNA_mosaic/",gsub(" ","_",test_spp[i]),"_mosaic.tif",sep=""),
+  mos_exists_az <- system(paste(aws_path,"aws s3 ls s3://bloomfindersdm/cog/",gsub(" ","_",test_spp[i]),"_calib_webmcog.tif",sep=""),
                           wait=TRUE)
   if(mos_exists_az==0 & overwrite==FALSE){
-    cat(paste("Raster predictions for",spp,"(",i,"of",length(test_spp),"already exist in S3, skipping...\n"),
+    cat(paste("Raster predictions for",test_spp[i],"(",i,"of",length(test_spp),"already exist in S3, skipping...\n"),
         file=log_path,append=TRUE)
     next
   }
     
     ##downloads fit model
-    #model_dl_cmd <- paste(aws_path,"aws s3 cp s3://sdmdata/models/sdm_", gsub(" ","_",test_spp[i]),".Rdata ",
-    #                      raw_model_path,"sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
-    #system(model_dl_cmd)
+    model_dl_cmd <- paste(aws_path,"aws s3 cp s3://sdmdata/models/sdm_", gsub(" ","_",test_spp[i]),".Rdata ",
+                          raw_model_path,"sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
+    system(model_dl_cmd)
     
-    #cal_model_dl_cmd <- paste(aws_path,"aws s3 cp s3://sdmdata/models_calibrated/sdm_", gsub(" ","_",test_spp[i]),"_calib.Rdata ",
-    #                      calib_model_path,"sdm_",gsub(" ","_",test_spp[i]),"_calib.Rdata",sep="")
-    #system(cal_model_dl_cmd)
+    cal_model_dl_cmd <- paste(aws_path,"aws s3 cp s3://sdmdata/models_calibrated/sdm_", gsub(" ","_",test_spp[i]),"_calib.Rdata ",
+                          calib_model_path,"sdm_",gsub(" ","_",test_spp[i]),"_calib.Rdata",sep="")
+    system(cal_model_dl_cmd)
     
     ##Loads fit models.
     model_file <- paste(raw_model_path,"sdm_",gsub(" ","_",test_spp[i]),".Rdata",sep="")
@@ -139,9 +146,9 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils")) %:% {
     ##Creates output directory for each species if it doesn't exist.
     spp_dir <- paste(out_path,gsub(" ","_",spp),"/",sep="")
     if(!dir.exists(spp_dir)){dir.create(spp_dir)}
-    
-    for(j in (1:length(pred_tiles))) {
       
+    for(j in 1:length(pred_tiles)) {
+    
       outfile <- paste(spp_dir,"sdm_tile_",j,
                        "_",gsub(" ","_",spp),".tif",sep="")
       if(file.exists(outfile) & overwrite==FALSE){
@@ -149,6 +156,11 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils")) %:% {
         next
       }
       pred_tile <- readAll(brick(pred_tiles[j]))
+      
+      if(is.na(minValue(pred_tile[[1]]))){
+        next
+      }
+      
       names(pred_tile) <- c('PCL_MAN', 'PCL_SE1', 'PCL_SE2', 'PCL_SE3', 'PCM_BFP',
                             'PCM_CMD', 'PCM_DD5', 'PCM_MAP', 'PCM_PAS', 'PCM_TD',
                             'PCT_ECO', 'PCT_EFW', 'PLC_HRB', 'PLC_TRE', 'PLC_URB',
@@ -174,7 +186,6 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils")) %:% {
       #corr_pred[corr_pred < -10] <- -10
       #corr_pred_prob <- calc(corr_pred,fun=inv_logit,progress='text')
 
-      
       calib_brick <- brick(corr_pred,corr_pred)
       calib_brick[[2]] <- 0.04
       names(calib_brick) <- c("Corr_pred",names(calib_model$coefficients)[2])
@@ -185,6 +196,10 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils")) %:% {
       Calib_out <- calc(Calib_pred,fun=function(x){x*1000},datatype="INT2S", overwrite=TRUE,
                         filename=outfile)
     }
+    
+    ##Removes model files.
+    rm_string_mod <- paste("rm",paste(model_file,calib_model_file))
+    system(rm_string_mod)
       
     ##Merges output tiles to single raster.
     tiles <- list.files(spp_dir,pattern=".tif$")
@@ -193,9 +208,14 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils")) %:% {
     mosaic_rasters(gdalfile=tiles,dst_dataset=outname,
                    verbose=TRUE)
     
+    ##Removes tiles
+    all_tile_files <- list.files(spp_dir)
+    rm_string <- paste("rm",paste(paste(spp_dir,all_tile_files,sep=""),collapse=" "))
+    system(rm_string,wait=TRUE)
+    
     ##Copies raster mosaic to S3 bucket.
     cp_string <- paste(aws_path,"aws s3 cp ",outname,
-                       paste(" s3://sdmdata/PNW_mosaic/", gsub(" ","_",test_spp[i]), "_calib.tif",sep=""),sep="")
+                       paste(" s3://sdmdata/WNA_mosaic/", gsub(" ","_",test_spp[i]), "_calib.tif",sep=""),sep="")
     system(cp_string,wait=TRUE)
     
     ##Creates a cloud-optimized geotiff in web mercator projection.
@@ -208,28 +228,21 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils")) %:% {
     gdala_call <- paste(gdal_path,"gdaladdo -r average ",warpname," 2 4 8 16 32",
                         sep="")
     system(gdala_call,wait=TRUE)
-    gdalt_call <- paste(gdal_path,"gdal_translate ",warpname," ",cogname, " -ot UInt16 -co TILED=YES -co COPY_SRC_OVERVIEWS=YES -co COMPRESS=DEFLATE -co BLOCKXSIZE=512 -co BLOCKYSIZE=512 --config GDAL_TIFF_OVR_BLOCKSIZE 512",
+    gdalt_call <- paste(gdal_path,"gdal_translate ",warpname," ",cogname, " -ot Int16 -co TILED=YES -co COPY_SRC_OVERVIEWS=YES -co COMPRESS=DEFLATE -co BLOCKXSIZE=512 -co BLOCKYSIZE=512 --config GDAL_TIFF_OVR_BLOCKSIZE 512",
                         sep="")
     system(gdalt_call,wait=TRUE)
     
     ##Copies web COG to S3
-    #cp_string <- paste(aws_path,"aws s3 cp ",cogname,
-    #                   paste(" s3://bloomfindersdm/cog/", gsub(" ","_",test_spp[i]), "_calib_webmcog.tif",sep=""),sep="")
-    #system(cp_string,wait=TRUE)
+    cp_string <- paste(aws_path,"aws s3 cp ",cogname,
+                       paste(" s3://bloomfindersdm/cog_wna/", gsub(" ","_",test_spp[i]), "_calib_webmcog.tif",sep=""),sep="")
+    system(cp_string,wait=TRUE)
     
-    ##Removes tiles, mosaic, and model to save disk space.
-    #all_tile_files <- list.files(spp_dir)
-    #rm_string <- paste("rm",paste(paste(spp_dir,all_tile_files,sep=""),collapse=" "))
-    #system(rm_string,wait=TRUE)
-    
-    #all_mos_files <- list.files(mosaic_path,pattern=gsub(" ","_",test_spp[i]))
-    #rm_mos_string <- paste("rm",paste(paste(mosaic_path,all_mos_files,sep=""),collapse=" "))
-    #system(rm_mos_string,wait=TRUE)
-    
-    #rm_string_mod <- paste("rm",paste(model_file,calib_model_file))
-    #system(rm_string_mod)
+    ##Removes mosaic files.
+    all_mos_files <- list.files(mosaic_path,pattern=gsub(" ","_",test_spp[i]))
+    rm_mos_string <- paste("rm",paste(paste(mosaic_path,all_mos_files,sep=""),collapse=" "))
+    system(rm_mos_string,wait=TRUE)
     
     cat(paste("Raster predictions for",spp,"(",i,"of",length(test_spp),") completed on",
               Sys.time(),"\n"),file=log_path,append=TRUE)
-}
-stopCluster(cl)
+         }
+stopcluster(cl)

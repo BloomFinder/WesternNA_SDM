@@ -70,7 +70,7 @@ set.seed(37)
 
 overwrite <- TRUE
 # 
-spp <- c("Arnica nevadensis","Calochortus coeruleus")
+#spp <- c("Arnica nevadensis","Calochortus coeruleus")
 #spp <- spp[1:7]
 
 ##PROBLEM: sdm predict() function fails when run in parallel with %dopar% or %dorng%
@@ -230,7 +230,7 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr","openblasctl")) %dorng% {
     ##Fits the kriging model for geographic correction.
     print(paste("Kriging with presence-background data..."))
 
-    corr_gam <- gam(TR_PRES~s(pred_logit,k=14)+s(PCO_XSC,PCO_YSC,bs="gp"),data=corr_data,
+    corr_gam <- gam(TR_PRES~s(pred_logit,k=14),data=corr_data,
                     family=binomial(link = "logit"))
     
     ##Predicts for heldout data.
@@ -244,7 +244,7 @@ cals <- foreach(i=1:length(spp),.packages=c("dplyr","openblasctl")) %dorng% {
     print(paste("Baseline corrected AUC",round(base_AUC,4)))
     
     if(sum(pres_abs_test$PRES,na.rm=TRUE) > 3){
-      ks <- c(20,40,60,80,100)
+      ks <- c(60,80,100,120,140)
       corr_gam_test <- as.list(rep(NA,length(ks)))
       new_AUC <- rep(NA,length(ks))
       for(j in 1:length(ks)){
