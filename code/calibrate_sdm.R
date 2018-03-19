@@ -70,7 +70,7 @@ set.seed(37)
 
 overwrite <- TRUE
 # 
-spp <- c("Arnica nevadensis","Calochortus coeruleus")
+#spp <- c("Arnica nevadensis","Calochortus coeruleus")
 #spp <- spp[1:7]
 
 ##PROBLEM: sdm predict() function fails when run in parallel with %dopar% or %dorng%

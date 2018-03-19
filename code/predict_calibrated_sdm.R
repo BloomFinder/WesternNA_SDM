@@ -39,13 +39,13 @@ aws_path <- "/home/rstudio/.local/bin/"
 gdal_path <- "/usr/bin/"
 #gdal_path <- "/Library/Frameworks/GDAL.framework/Programs/"
 
-# #Downloads full raster data from Amazon S3 if it doesn't already exist.
-# if(!file.exists("./data/SDM_tiles_WNA.tar.gz")){
-#   aws_dl2 <- "~/.local/bin/aws s3 cp s3://sdmdata/predictors/SDM_tiles_WNA.tar.gz ./data/SDM_tiles_WNA.tar.gz"
-#   system(paste("cd",proj_dir,"&&",aws_dl2),wait=TRUE)
-#   tar_dl2 <- "tar -xf ./data/SDM_tiles_WNA.tar.gz -C ./data/"
-#   system(paste("cd",proj_dir,"&&",tar_dl2),wait=TRUE)
-# }
+#Downloads full raster data from Amazon S3 if it doesn't already exist.
+if(!file.exists("./data/SDM_tiles_WNA.tar.gz")){
+  aws_dl2 <- "~/.local/bin/aws s3 cp s3://sdmdata/predictors/SDM_tiles_WNA.tar.gz ./data/SDM_tiles_WNA.tar.gz"
+  system(paste("cd",proj_dir,"&&",aws_dl2),wait=TRUE)
+  tar_dl2 <- "tar -xf ./data/SDM_tiles_WNA.tar.gz -C ./data/"
+  system(paste("cd",proj_dir,"&&",tar_dl2),wait=TRUE)
+}
 
 ##Downloads test raster data from Amazon S3 if it doesn't already exist.
 if(!file.exists("./data/SDM_tiles_PNW.tar.gz")){
@@ -86,15 +86,15 @@ pred_tiles <- list.files(tile_path, pattern=".tif$", full.names=TRUE)
 pred_names <- list.files(tile_path,pattern=".tif$", full.names=FALSE)
 
 model_files <- list.files(raw_model_path,pattern=".Rdata",full.names=TRUE)
-overwrite=FALSE
+overwrite=TRUE
 
 ##Sets up cluster.
-cl <- makeCluster(95)
+cl <- makeCluster(65)
 registerDoParallel(cl)
 
 ##Raster predictions.
 foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl")) %dopar% {
-  
+
   openblas_set_num_threads(1)
   
   ##Adds custom svm function to sdm package.
@@ -151,8 +151,8 @@ foreach(i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasctl
     spp_dir <- paste(out_path,gsub(" ","_",spp),"/",sep="")
     if(!dir.exists(spp_dir)){dir.create(spp_dir)}
     
-    for(j in (1:length(pred_tiles))) {
-      
+    foreach(j=1:length(pred_tiles),.packages=c("raster","sdm","gdalUtils","openblasctl")) %dopar% {
+
       outfile <- paste(spp_dir,"sdm_tile_",j,
                        "_",gsub(" ","_",spp),".tif",sep="")
       if(file.exists(outfile) & overwrite==FALSE){
