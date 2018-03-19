@@ -52,7 +52,7 @@ if(!file.exists("./data/SDM_tiles_PNW.tar.gz")){
   aws_dl1 <- paste(aws_path,"aws s3 cp s3://sdmdata/predictors/SDM_tiles_PNW.tar.gz ./data/SDM_tiles_PNW.tar.gz",sep="")
   system(paste("cd",proj_dir,"&&",aws_dl1))
   tar_dl1 <- "tar -xf ./data/SDM_tiles_PNW.tar.gz -C ./data/"
-  system(paste("cd",proj_dir,"&&",tar_dl1))
+  system(paste("cd",proj_dir,"&&",tar_dl1),wait=TRUE)
 }
 
 ##Downloads point data from Amazon S3 if it doesn't already exist.
@@ -64,7 +64,6 @@ if(!file.exists("./data/occurences_final_3_1_2018.csv")){
 }
 
 spd <- read_csv("./data/occurences_final_3_1_2018.csv")
-rm(spd)
 all_spp <- unique(spd$species)
 
 exclude_spp <-  c("Agastache urticifolia",    "Angelica arguta",          "Antennaria rosea",        
@@ -76,6 +75,7 @@ exclude_spp <-  c("Agastache urticifolia",    "Angelica arguta",          "Anten
                   "Linaria vulgaris")
 
 test_spp <- all_spp[!(all_spp %in% exclude_spp)]
+rm(spd)
 
 pred_tiles <- list.files(tile_path, pattern=".tif$", full.names=TRUE)
 pred_names <- list.files(tile_path,pattern=".tif$", full.names=FALSE)
@@ -156,6 +156,11 @@ foreach (i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasct
         next
       }
       pred_tile <- readAll(brick(pred_tiles[j]))
+      
+      if(is.na(minValue(pred_tile[[1]]))){
+        next
+      }
+      
       names(pred_tile) <- c('PCL_MAN', 'PCL_SE1', 'PCL_SE2', 'PCL_SE3', 'PCM_BFP',
                             'PCM_CMD', 'PCM_DD5', 'PCM_MAP', 'PCM_PAS', 'PCM_TD',
                             'PCT_ECO', 'PCT_EFW', 'PLC_HRB', 'PLC_TRE', 'PLC_URB',
@@ -239,4 +244,5 @@ foreach (i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasct
     
     cat(paste("Raster predictions for",spp,"(",i,"of",length(test_spp),") completed on",
               Sys.time(),"\n"),file=log_path,append=TRUE)
-}
+         }
+stopcluster(cl)
