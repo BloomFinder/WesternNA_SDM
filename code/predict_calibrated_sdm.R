@@ -84,7 +84,7 @@ model_files <- list.files(raw_model_path,pattern=".Rdata",full.names=TRUE)
 overwrite=TRUE
 
 ##Sets up cluster.
-cl <- makeCluster(90)
+cl <- makeCluster(70)
 registerDoParallel(cl)
 
 ##Raster predictions.
@@ -150,8 +150,8 @@ foreach (i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasct
     for(j in 1:length(pred_tiles)) {
     
       outfile <- paste(spp_dir,"sdm_tile_",j,
-                       "_",gsub(" ","_",spp),".tif",sep="")
-      if(file.exists(outfile) & overwrite==FALSE){
+                       "_",gsub(" ","_",spp),".img",sep="")
+      if(file.exists(outfile)){
         print(paste("File exists, skipping..."))
         next
       }
@@ -174,22 +174,31 @@ foreach (i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasct
                                         weights=stats$ensemble_weight[models@run.info$success]),
                            filename=paste(spp_dir,"sdmtemp.img",sep=""),
                            overwrite=TRUE,progress='text'))
+      
       raw_pred[raw_pred < (1e-4)] <- 1e-4
       raw_pred[raw_pred > (1 - 1e-4)] <- (1 - 1e-4)
       
+      XSC <- pred_tile$PCO_XSC
+      YSC <- pred_tile$PCO_YSC
+      rm(pred_tile)
+      
       pred_logit <- calc(raw_pred,fun=logit,progress='text')
+      rm(raw_pred)
       #pred_logit[pred_logit < -4] <- -4
-      corr_brick <- brick(pred_tile$PCO_XSC,pred_tile$PCO_YSC,pred_logit)
+      corr_brick <- brick(XSC,YSC,pred_logit)
       names(corr_brick) <- c("PCO_XSC","PCO_YSC","pred_logit")
+      rm(XSC,YSC)
       
       corr_pred <- raster::predict(corr_brick, model=corr_model, progress='text')
       #corr_pred[corr_pred < -10] <- -10
       #corr_pred_prob <- calc(corr_pred,fun=inv_logit,progress='text')
+      rm(corr_brick)
 
       calib_brick <- brick(corr_pred,corr_pred)
       calib_brick[[2]] <- 0.04
       names(calib_brick) <- c("Corr_pred",names(calib_model$coefficients)[2])
       Calib_pred <- raster::predict(calib_brick, model=calib_model, progress="text")
+      rm(calib_brick)
       Calib_pred[Calib_pred < -32] <- -32
       Calib_pred[Calib_pred > 32] <- 32
       #Calib_pred_prob <- calc(Calib_pred,fun=inv_logit,progress='text')
@@ -199,10 +208,14 @@ foreach (i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasct
     
     ##Removes model files.
     rm_string_mod <- paste("rm",paste(model_file,calib_model_file))
-    system(rm_string_mod)
-      
+    system(rm_string_mod,wait=TRUE)
+    
+    ##Removes temporary raster.
+    rm_string_temp <- paste("rm ",paste(spp_dir,"sdmtemp.img ",sep=""), paste(spp_dir,"sdmtemp.img.aux.xml",sep=""),sep="")
+    system(rm_string_temp,wait=TRUE)
+    
     ##Merges output tiles to single raster.
-    tiles <- list.files(spp_dir,pattern=".tif$")
+    tiles <- list.files(spp_dir,pattern=".img$")
     setwd(spp_dir)
     outname <- paste(mosaic_path,gsub(" ","_",test_spp[i]),"_calib.tif",sep="")
     mosaic_rasters(gdalfile=tiles,dst_dataset=outname,
@@ -222,13 +235,13 @@ foreach (i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasct
     warpname <- gsub("_calib.tif","_calib_webm.tif",outname,fixed=TRUE)
     cogname <- gsub("_calib.tif","_calib_webmcog.tif",outname,fixed=TRUE)
     
-    gdalw_call <- paste(gdal_path,"gdalwarp ",outname," ",warpname," -overwrite -t_srs EPSG:3857 -r bilinear -co TILED=YES -co COMPRESS=DEFLATE",
+    gdalw_call <- paste(gdal_path,"gdalwarp ",outname," ",warpname," -overwrite -t_srs EPSG:3857 -r bilinear -co TILED=YES -co COMPRESS=DEFLATE -co PREDICTOR=2 -co BLOCKXSIZE=512 -co BLOCKYSIZE=512",
                         sep="")
     system(gdalw_call,wait=TRUE)
-    gdala_call <- paste(gdal_path,"gdaladdo -r average ",warpname," 2 4 8 16 32",
+    gdala_call <- paste(gdal_path,"gdaladdo -r average ",warpname," 2 4 8 16 32 64 128 256 512 1024 2048",
                         sep="")
     system(gdala_call,wait=TRUE)
-    gdalt_call <- paste(gdal_path,"gdal_translate ",warpname," ",cogname, " -ot Int16 -co TILED=YES -co COPY_SRC_OVERVIEWS=YES -co COMPRESS=DEFLATE -co BLOCKXSIZE=512 -co BLOCKYSIZE=512 --config GDAL_TIFF_OVR_BLOCKSIZE 512",
+    gdalt_call <- paste(gdal_path,"gdal_translate ",warpname," ",cogname, " -ot Int16 -co TILED=YES -co COPY_SRC_OVERVIEWS=YES -co COMPRESS=DEFLATE -co PREDICTOR=2 -co BLOCKXSIZE=512 -co BLOCKYSIZE=512 --config GDAL_TIFF_OVR_BLOCKSIZE 512",
                         sep="")
     system(gdalt_call,wait=TRUE)
     
@@ -245,4 +258,4 @@ foreach (i=1:length(test_spp),.packages=c("raster","sdm","gdalUtils","openblasct
     cat(paste("Raster predictions for",spp,"(",i,"of",length(test_spp),") completed on",
               Sys.time(),"\n"),file=log_path,append=TRUE)
          }
-stopcluster(cl)
+stopCluster(cl)
